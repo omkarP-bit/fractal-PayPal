@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strings"
@@ -14,201 +16,144 @@ import (
 )
 
 const (
-	tokenEndpoint = "/v1/oauth2/token"
-	ordersEndpoint = "/v2/checkout/orders"
-	capturesEndpoint = "/v2/payments/captures"
-	verifyWebhookEndpoint = "/v1/notifications/verify-webhook-signature"
+	PayPalSandboxBaseURL = "https://api-m.sandbox.paypal.com"
+	PayPalLiveBaseURL    = "https://api-m.paypal.com"
 )
 
-// PayPalProvider calls PayPal REST directly. No SDK.
-type PayPalProvider struct {
-	clientID     string
-	clientSecret string
-	baseURL      string
-	httpClient   *http.Client
+// PayPal talks to PayPal's REST API directly over HTTPS (no SDK).
+type PayPal struct {
+	BaseURL      string
+	ClientID     string
+	ClientSecret string
+	HTTP         *http.Client
+	Log          *slog.Logger
 
-	mu       sync.Mutex
-	token    string
-	tokenExp time.Time
+	mu      sync.Mutex
+	token   string
+	expires time.Time
 }
 
-func NewPayPal(clientID, clientSecret, baseURL string) *PayPalProvider {
-	return &PayPalProvider{
-		clientID:     clientID,
-		clientSecret: clientSecret,
-		baseURL:      strings.TrimRight(baseURL, "/"),
-		httpClient:   &http.Client{Timeout: 30 * time.Second},
+func NewPayPal(baseURL, clientID, clientSecret string, log *slog.Logger) *PayPal {
+	if log == nil {
+		log = slog.Default()
+	}
+	return &PayPal{
+		BaseURL:      strings.TrimRight(baseURL, "/"),
+		ClientID:     clientID,
+		ClientSecret: clientSecret,
+		HTTP:         &http.Client{Timeout: 10 * time.Second},
+		Log:          log,
 	}
 }
 
-func (p *PayPalProvider) GetTransaction(ctx context.Context, providerOrderID string) (*Transaction, error) {
-	// Capture lookup via /v2/payments/captures/{capture_id} is used when we have a capture id.
-	// For order lookup we use /v2/checkout/orders/{id}. Here we fetch by order id.
-	return p.getOrder(ctx, providerOrderID)
-}
-
-func (p *PayPalProvider) getOrder(ctx context.Context, orderID string) (*Transaction, error) {
-	token, err := p.accessToken(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("get token: %w", err)
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, p.baseURL+ordersEndpoint+"/"+orderID, nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Authorization", "Bearer "+token)
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := p.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("request: %w", err)
-	}
-	defer resp.Body.Close()
-	body, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("paypal order %d: %s", resp.StatusCode, string(body))
-	}
-	var parsed struct {
-		ID            string `json:"id"`
-		Status        string `json:"status"`
-		PurchaseUnits []struct {
-			Amount struct {
-				Value    string `json:"value"`
-				Currency string `json:"currency_code"`
-			} `json:"amount"`
-		} `json:"purchase_units"`
-	}
-	if err := json.Unmarshal(body, &parsed); err != nil {
-		return nil, fmt.Errorf("parse: %w", err)
-	}
-	amountMinor := int64(0)
-	if len(parsed.PurchaseUnits) > 0 {
-		amountMinor = parseMinor(parsed.PurchaseUnits[0].Amount.Value)
-	}
-	return &Transaction{
-		Provider:         "PAYPAL",
-		ProviderOrderID:  parsed.ID,
-		AmountMinor:      amountMinor,
-		Currency:         parsed.PurchaseUnits[0].Amount.Currency,
-		Status:           parsed.Status,
-		FetchedAt:        time.Now().UTC(),
-	}, nil
-}
-
-func (p *PayPalProvider) VerifyWebhook(ctx context.Context, rawBody []byte, headers map[string]string) (bool, error) {
-	token, err := p.accessToken(ctx)
-	if err != nil {
-		return false, fmt.Errorf("get token: %w", err)
-	}
-	body := map[string]any{
-		"transmission_id": headers["Paypal-Transmission-Id"],
-		"transmission_time": headers["Paypal-Transmission-Time"],
-		"cert_url":         headers["Paypal-Cert-Url"],
-		"auth_algo":        headers["Paypal-Auth-Algo"],
-		"transmission_sig": headers["Paypal-Transmission-Sig"],
-		"webhook_id":       headers["Paypal-Webhook-Id"],
-		"webhook_event":    json.RawMessage(rawBody),
-	}
-	reqBody, _ := json.Marshal(body)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, p.baseURL+verifyWebhookEndpoint, bytes.NewReader(reqBody))
-	if err != nil {
-		return false, err
-	}
-	req.Header.Set("Authorization", "Bearer "+token)
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := p.httpClient.Do(req)
-	if err != nil {
-		return false, fmt.Errorf("verify request: %w", err)
-	}
-	defer resp.Body.Close()
-	respBody, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode != http.StatusOK {
-		return false, fmt.Errorf("verify %d: %s", resp.StatusCode, string(respBody))
-	}
-	var result struct {
-		VerificationStatus string `json:"verification_status"`
-	}
-	if err := json.Unmarshal(respBody, &result); err != nil {
-		return false, fmt.Errorf("parse verify: %w", err)
-	}
-	return result.VerificationStatus == "SUCCESS", nil
-}
-
-func (p *PayPalProvider) Refund(ctx context.Context, captureID string, amountMinor int64, currency string, idempotencyKey string) (string, error) {
-	return "", fmt.Errorf("refund not implemented in this step")
-}
-
-func (p *PayPalProvider) ListWebhookEvents(ctx context.Context) ([]WebhookEvent, error) {
-	return nil, fmt.Errorf("list webhook events not implemented in this step")
-}
-
-func (p *PayPalProvider) accessToken(ctx context.Context) (string, error) {
+// accessToken returns a cached OAuth token, refreshing it shortly before expiry.
+// The mutex is held during the fetch so concurrent callers share one refresh.
+func (p *PayPal) accessToken(ctx context.Context) (string, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if p.token != "" && time.Now().Add(30*time.Second).Before(p.tokenExp) {
+	if p.token != "" && time.Now().Add(30*time.Second).Before(p.expires) {
 		return p.token, nil
 	}
-	data := url.Values{"grant_type": {"client_credentials"}}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, p.baseURL+tokenEndpoint, strings.NewReader(data.Encode()))
+	form := url.Values{"grant_type": {"client_credentials"}}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, p.BaseURL+"/v1/oauth2/token", strings.NewReader(form.Encode()))
 	if err != nil {
 		return "", err
 	}
-	req.SetBasicAuth(p.clientID, p.clientSecret)
+	req.SetBasicAuth(p.ClientID, p.ClientSecret)
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-
-	resp, err := p.httpClient.Do(req)
+	resp, err := p.HTTP.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("token request: %w", err)
+		return "", fmt.Errorf("paypal token request: %w", err)
 	}
 	defer resp.Body.Close()
-	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("token %d: %s", resp.StatusCode, string(body))
+		io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
+		return "", fmt.Errorf("paypal token request: status %d", resp.StatusCode)
 	}
-	var parsed struct {
+	var out struct {
 		AccessToken string `json:"access_token"`
 		ExpiresIn   int    `json:"expires_in"`
 	}
-	if err := json.Unmarshal(body, &parsed); err != nil {
-		return "", fmt.Errorf("parse token: %w", err)
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&out); err != nil || out.AccessToken == "" {
+		return "", errors.New("paypal token response invalid")
 	}
-	p.token = parsed.AccessToken
-	p.tokenExp = time.Now().Add(time.Duration(parsed.ExpiresIn) * time.Second)
+	p.token = out.AccessToken
+	p.expires = time.Now().Add(time.Duration(out.ExpiresIn) * time.Second)
 	return p.token, nil
 }
 
-func parseMinor(value string) int64 {
-	var neg int64 = 1
-	v := value
-	if strings.HasPrefix(v, "-") {
-		neg = -1
-		v = strings.TrimPrefix(v, "-")
-	}
-	parts := strings.SplitN(v, ".", 2)
-	major := parts[0]
-	minor := "00"
-	if len(parts) == 2 {
-		minor = parts[1]
-		if len(minor) == 1 {
-			minor += "0"
-		}
-		if len(minor) > 2 {
-			minor = minor[:2]
-		}
-	}
-	n := int64(0)
-	for _, ch := range major {
-		if ch >= '0' && ch <= '9' {
-			n = n*10 + int64(ch-'0')
-		}
-	}
-	n = n*100
-	for _, ch := range minor {
-		if ch >= '0' && ch <= '9' {
-			n = n*10 + int64(ch-'0')
-		}
-	}
-	return n * neg
+func (p *PayPal) clearToken() {
+	p.mu.Lock()
+	p.token = ""
+	p.mu.Unlock()
 }
 
+// VerifyWebhook posts the event back to PayPal's verify-webhook-signature
+// endpoint (the "postback" method).
+//
+// Notes:
+//   - The request body is assembled by hand so the original event bytes are
+//     embedded unchanged under "webhook_event" (no re-serialization of the event).
+//   - cert_url comes from an attacker-controllable header. We never fetch it
+//     ourselves; only PayPal does, which avoids SSRF from our side.
+//   - Simulator (mock) events cannot be verified and will come back as failures.
+func (p *PayPal) VerifyWebhook(ctx context.Context, webhookID string, h WebhookHeaders, rawBody []byte) (bool, error) {
+	if !json.Valid(rawBody) {
+		return false, nil
+	}
+	tok, err := p.accessToken(ctx)
+	if err != nil {
+		return false, err
+	}
+
+	str := func(s string) []byte { b, _ := json.Marshal(s); return b }
+	var body bytes.Buffer
+	body.WriteString(`{"auth_algo":`)
+	body.Write(str(h.AuthAlgo))
+	body.WriteString(`,"cert_url":`)
+	body.Write(str(h.CertURL))
+	body.WriteString(`,"transmission_id":`)
+	body.Write(str(h.TransmissionID))
+	body.WriteString(`,"transmission_sig":`)
+	body.Write(str(h.TransmissionSig))
+	body.WriteString(`,"transmission_time":`)
+	body.Write(str(h.TransmissionTime))
+	body.WriteString(`,"webhook_id":`)
+	body.Write(str(webhookID))
+	body.WriteString(`,"webhook_event":`)
+	body.Write(rawBody)
+	body.WriteString(`}`)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, p.BaseURL+"/v1/notifications/verify-webhook-signature", &body)
+	if err != nil {
+		return false, err
+	}
+	req.Header.Set("Authorization", "Bearer "+tok)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := p.HTTP.Do(req)
+	if err != nil {
+		return false, fmt.Errorf("paypal verify request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	switch {
+	case resp.StatusCode == http.StatusUnauthorized:
+		p.clearToken() // token may have been revoked; next attempt fetches a new one
+		return false, errors.New("paypal verify: unauthorized (token cleared)")
+	case resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500:
+		return false, fmt.Errorf("paypal verify: status %d", resp.StatusCode)
+	case resp.StatusCode != http.StatusOK:
+		// Other 4xx (for example a malformed or forged request): not authentic.
+		p.Log.Warn("paypal verify rejected request", "status", resp.StatusCode)
+		return false, nil
+	}
+
+	var out struct {
+		VerificationStatus string `json:"verification_status"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&out); err != nil {
+		return false, fmt.Errorf("paypal verify response: %w", err)
+	}
+	return out.VerificationStatus == "SUCCESS", nil
+}

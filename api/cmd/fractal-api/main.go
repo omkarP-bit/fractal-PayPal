@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"log/slog"
 	"net/http"
 	"os"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	_ "github.com/jackc/pgx/v5/stdlib"
 
 	"fractal/api/internal/auth"
 	"fractal/api/internal/cases"
@@ -35,6 +37,14 @@ func main() {
 	}
 	defer pool.Close()
 
+	// Share the same database via database/sql for the webhook store/account resolver.
+	sqlDB, err := sql.Open("pgx", dsn)
+	if err != nil {
+		logger.Error("open sql db", "err", err)
+		os.Exit(1)
+	}
+	defer sqlDB.Close()
+
 	caseStore := cases.NewStore(pool)
 	caseHandlers := cases.NewHandlers(caseStore)
 
@@ -45,15 +55,33 @@ func main() {
 		defer tp.Shutdown(context.Background())
 	}
 
+	// ---- PayPal provider + webhook handler ----
 	clientID := os.Getenv("PAYPAL_CLIENT_ID")
 	clientSecret := os.Getenv("PAYPAL_CLIENT_SECRET")
 	baseURL := os.Getenv("PAYPAL_BASE_URL")
 	if baseURL == "" {
-		baseURL = "https://api-m.sandbox.paypal.com"
+		baseURL = provider.PayPalSandboxBaseURL
 	}
-	webhookID := os.Getenv("PAYPAL_WEBHOOK_ID")
-	paypal := provider.NewPayPal(clientID, clientSecret, baseURL)
-	whReceiver := webhook.NewReceiver(paypal, pool, webhookID, logger)
+
+	paypal := provider.NewPayPal(baseURL, clientID, clientSecret, logger)
+
+	wake, wakeCh := webhook.NewWaker()
+	h := &webhook.Handler{
+		Provider: "PAYPAL",
+		Accounts: &webhook.PGAccounts{DB: sqlDB},
+		Verifier: paypal,
+		Store:    &webhook.PGStore{DB: sqlDB},
+		Wake:     wake,
+		Log:      logger,
+	}
+
+	// Background worker: drains RECEIVED webhook_events and processes them.
+	go (&webhook.Worker{
+		DB:   sqlDB,
+		Proc: &noopProcessor{},
+		Wake: wakeCh,
+		Log:  logger,
+	}).Run(context.Background())
 
 	mux := http.NewServeMux()
 
@@ -82,7 +110,7 @@ func main() {
 	mux.Handle("GET /cases/{id}", middleware(auth.RequireAuth(http.HandlerFunc(caseHandlers.Get))))
 	mux.Handle("POST /cases", middleware(auth.RequireAuth(http.HandlerFunc(caseHandlers.Create))))
 
-	mux.Handle("POST /webhooks/paypal/{provider_account_id}", middleware(http.HandlerFunc(whReceiver.Handle)))
+	mux.Handle("POST /api/v1/webhooks/paypal/{provider_account_id}", middleware(h))
 
 	// Internal read-only telemetry endpoints (agent tools, Spec C7).
 	mux.Handle("GET /internal/v1/telemetry/logs", middleware(http.HandlerFunc(endpoints.LogsByCase)))
@@ -121,4 +149,14 @@ func main() {
 	defer cancel()
 	_ = srv.Shutdown(ctx)
 	slog.Info("fractal-api stopped")
+}
+
+// noopProcessor is a placeholder Processor that acknowledges events without
+// side effects. Real processing (payment_transactions, evidence, cases) is
+// wired in later phases.
+type noopProcessor struct{}
+
+func (p *noopProcessor) Process(ctx context.Context, ev webhook.EventRow) error {
+	slog.Info("webhook event processed (noop)", "event", ev.ID, "type", ev.EventType)
+	return nil
 }
