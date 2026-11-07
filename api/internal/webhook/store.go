@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"os"
 )
 
 // PGStore persists webhook data in PostgreSQL through database/sql.
@@ -54,11 +55,18 @@ func (a *PGAccounts) WebhookID(ctx context.Context, accountID string) (string, e
 	err := a.DB.QueryRowContext(ctx, `
 		SELECT webhook_id FROM provider_accounts
 		WHERE id = $1 AND provider = 'PAYPAL' AND status = 'ACTIVE'`, accountID).Scan(&id)
-	if errors.Is(err, sql.ErrNoRows) || (err == nil && !id.Valid) {
+	if errors.Is(err, sql.ErrNoRows) {
 		return "", ErrAccountNotFound
 	}
 	if err != nil {
 		return "", err
 	}
-	return id.String, nil
+	// Prefer the DB-stored webhook ID; fall back to PAYPAL_WEBHOOK_ID from .env.
+	if id.Valid && id.String != "" {
+		return id.String, nil
+	}
+	if envID := os.Getenv("PAYPAL_WEBHOOK_ID"); envID != "" && envID != "your_sandbox_webhook_id" {
+		return envID, nil
+	}
+	return "", ErrAccountNotFound
 }
