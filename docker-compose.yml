@@ -1,0 +1,58 @@
+version: "3.8"
+
+services:
+  opa:
+    image: openpolicyagent/opa:latest
+    ports:
+      - "8181:8181"
+    command: ["run", "--server", "--addr", "0.0.0.0:8181"]
+    volumes:
+      - ./policies:/policies
+
+  fractal-api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - FRACTAL_JWT_SECRET=${FRACTAL_JWT_SECRET}
+      - PAYPAL_CLIENT_ID=${PAYPAL_CLIENT_ID}
+      - PAYPAL_CLIENT_SECRET=${PAYPAL_CLIENT_SECRET}
+      - PAYPAL_BASE_URL=${PAYPAL_BASE_URL}
+      - PAYPAL_WEBHOOK_ID=${PAYPAL_WEBHOOK_ID}
+      - OPA_ADDR=${OPA_ADDR}
+      - ELASTICSEARCH_URL=${ELASTICSEARCH_URL}
+    depends_on:
+      opa:
+        condition: service_started
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  merchant-store:
+    build:
+      context: ./merchant-store
+      dockerfile: Dockerfile
+    ports:
+      - "8090:8090"
+    environment:
+      - MERCHANT_INTEGRATION_SECRET=${MERCHANT_INTEGRATION_SECRET}
+      - PAYPAL_CLIENT_ID=${PAYPAL_CLIENT_ID}
+      - PAYPAL_CLIENT_SECRET=${PAYPAL_CLIENT_SECRET}
+      - PAYPAL_BASE_URL=${PAYPAL_BASE_URL}
+    depends_on:
+      - fractal-api
+
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    ports:
+      - "5173:5173"
+    environment:
+      - VITE_API_BASE=http://localhost:8080
+
+volumes:
+  pgdata:
+  esdata:
