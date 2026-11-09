@@ -24,10 +24,15 @@ const NAV_ITEMS = [
 
 export function Layout({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [role, setRole] = useState<'CUSTOMER' | 'MERCHANT' | null>('CUSTOMER');
+  // Manual role switch; null = follow the signed-in user.
+  const [manualRole, setManualRole] = useState<'CUSTOMER' | 'MERCHANT' | null>(null);
   const [dark, setDark] = useState(() => document.documentElement.classList.contains('dark'));
   const location = useLocation();
   const { user, logout } = useAuthStore();
+
+  // Sync nav with the signed-in user (merchant users see merchant links);
+  // an explicit manual switch always takes precedence and is never undone.
+  const role = manualRole ?? (user?.kind === 'MERCHANT_USER' ? 'MERCHANT' : 'CUSTOMER');
 
   // Merchant sees all tabs (customer + merchant) — original behavior.
   const visibleItems = NAV_ITEMS.filter((item) => item.role === role || item.role === 'CUSTOMER');
@@ -96,7 +101,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
 
         <div className="mt-auto p-6 border-t border-gray-200">
           <button
-            onClick={() => setRole(role === 'CUSTOMER' ? 'MERCHANT' : 'CUSTOMER')}
+            onClick={() => setManualRole(role === 'CUSTOMER' ? 'MERCHANT' : 'CUSTOMER')}
             className="w-full flex items-center justify-between px-4 py-2.5 rounded-lg border border-gray-200 text-sm font-medium hover:bg-gray-50 transition-colors"
           >
             <span>Switch to {role === 'CUSTOMER' ? 'Merchant' : 'Customer'}</span>
