@@ -75,7 +75,7 @@
   color-scheme: dark;
 
   --paypal-50: 26 49 83;
-  --paypal-700: 59 130 246;
+  --paypal-700: 37 99 235; /* blue-600: white text = 5.17:1 (>= 4.5:1) on hover */
 
   --gray-50: 17 24 39;
   --gray-100: 24 32 47;
