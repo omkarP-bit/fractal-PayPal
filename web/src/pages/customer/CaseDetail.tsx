@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, ShieldCheck, Clock, MessageCircle, FileText } from '../../components/ui/Icons';
+import { ArrowLeft, ShieldCheck, Clock, MessageCircle, FileText, AlertCircle, CreditCard } from '../../components/ui/Icons';
 import { apiClient, CustomerCaseView } from '../../services/api';
 import { useAuthStore } from '../../store/auth';
 import { useSSE } from '../../hooks/useSSE';
-import { Badge } from '../components/ui/Badge';
+import { Badge } from '../../components/ui/Badge';
 
 export function CustomerCaseDetail() {
   const { id } = useParams();

@@ -3,8 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Mail, Lock, CreditCard, Plus } from '../../components/ui/Icons';
 import { apiClient, CreateCaseRequest } from '../../services/api';
 import { useAuthStore } from '../../store/auth';
-import { Button } from '../components/ui/Button';
-import { Input } from '../components/ui/Input';
+import { Button } from '../../components/ui/Button';
+import { Input } from '../../components/ui/Input';
 
 export function NewCase() {
   const [form, setForm] = useState({

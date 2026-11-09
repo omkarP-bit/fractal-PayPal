@@ -1,11 +1,11 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, ShieldCheck, Lock, FileText } from '../../components/ui/Icons';
+import { ArrowLeft, ShieldCheck, Lock, FileText, AlertCircle, CreditCard, Clock } from '../../components/ui/Icons';
 import { apiClient, CustomerCaseView } from '../../services/api';
 import { useAuthStore } from '../../store/auth';
 import { useSSE } from '../../hooks/useSSE';
-import { Badge } from '../components/ui/Badge';
-import { Button } from '../components/ui/Button';
+import { Badge } from '../../components/ui/Badge';
+import { Button } from '../../components/ui/Button';
 
 interface MerchantCaseView extends CustomerCaseView {
   provider: { name: string; order_id: string; capture_id: string; fetched_at: string };

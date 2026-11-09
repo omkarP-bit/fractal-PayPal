@@ -3,9 +3,9 @@ import { Link, useNavigate } from 'react-router-dom';
 import { Clock, ShieldCheck, CreditCard, AlertCircle, Bell, Filter } from '../../components/ui/Icons';
 import { apiClient, Case } from '../../services/api';
 import { useAuthStore } from '../../store/auth';
-import { Card } from '../components/ui/Card';
-import { Button } from '../components/ui/Button';
-import { Badge } from '../components/ui/Badge';
+import { Card } from '../../components/ui/Card';
+import { Button } from '../../components/ui/Button';
+import { Badge } from '../../components/ui/Badge';
 
 interface MerchantCase extends Case {
   investigation?: {

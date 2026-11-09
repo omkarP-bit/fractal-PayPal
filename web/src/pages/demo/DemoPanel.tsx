@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { LineChart, Line, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, PieChart, Pie, Cell } from 'recharts';
-import { Play, RefreshCw, AlertTriangle, CheckCircle, Server } from '../../components/ui/Icons';
+import { Play, RefreshCw, AlertTriangle, CheckCircle, Server, AlertCircle } from '../../components/ui/Icons';
 
 const MOCK_REPLAY_DATA = [
   { name: 'Attempt 1', success: 45, failed: 5 },

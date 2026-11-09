@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, Outlet, useLocation } from 'react-router-dom';
 import {
+  Menu,
   Mail,
   ShieldCheck,
   BarChart3,
@@ -18,13 +19,12 @@ const NAV_ITEMS = [
   { path: '/customer/cases', label: 'Cases', icon: Home, role: 'CUSTOMER' },
   { path: '/customer/cases/new', label: 'Report Issue', icon: Mail, role: 'CUSTOMER' },
   { path: '/merchant/cases', label: 'Cases', icon: Mail, role: 'MERCHANT' },
-  { path: '/merchant/cases/new', label: 'New Case', icon: Mail, role: 'MERCHANT' },
   { path: '/demo', label: 'Demo Controls', icon: Settings, role: 'MERCHANT' },
 ];
 
 export function Layout({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [role, setRole] = useState<'CUSTOMER' | 'MERCHANT' | null>(null);
+  const [role, setRole] = useState<'CUSTOMER' | 'MERCHANT' | null>('CUSTOMER');
   const location = useLocation();
   const { user, logout } = useAuthStore();
 
@@ -37,7 +37,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
       )}
 
       <aside
-        className={`fixed left-0 top-0 bottom-0 w-64 bg-white border-r border-gray-200 z-50 transition-transform duration-300 ${
+        className={`fixed left-0 top-0 bottom-0 w-64 bg-white border-r border-gray-200 z-50 transition-transform duration-300 md:translate-x-0 ${
           sidebarOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
@@ -48,7 +48,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
             </div>
             <span className="font-bold text-gray-900 tracking-tight text-lg">FRACTAL</span>
           </div>
-          <button onClick={() => setSidebarOpen(false)} className="text-gray-400 hover:text-gray-600">
+          <button onClick={() => setSidebarOpen(false)} className="text-gray-400 hover:text-gray-600 md:hidden">
             <span className="sr-only">Close menu</span>
             <div className="w-6 h-6">
               <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
@@ -95,7 +95,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
         </div>
       </aside>
 
-      <header className="sticky top-0 z-40 border-b border-gray-200 bg-white/95 backdrop-blur-md">
+      <header className="sticky top-0 z-40 border-b border-gray-200 bg-white/95 backdrop-blur-md md:ml-64">
         <div className="flex items-center justify-between px-6 py-3">
           <button
             onClick={() => setSidebarOpen(!sidebarOpen)}
@@ -113,17 +113,17 @@ export function Layout({ children }: { children: React.ReactNode }) {
               />
             </div>
             <div className="flex items-center gap-3">
-              <span className="hidden sm:block text-sm text-gray-500">{user.kind}</span>
+              <span className="hidden sm:block text-sm text-gray-500">{user?.kind ?? 'Guest'}</span>
               <div className="h-8 w-8 rounded-full bg-paypal-600 flex items-center justify-center text-white text-sm font-medium">
-                {user.kind?.[0]?.toUpperCase()}
+                {user?.kind?.[0]?.toUpperCase() ?? 'G'}
               </div>
             </div>
           </div>
         </div>
       </header>
 
-      <main className={`pt-20 pb-8 px-4 sm:px-6 lg:px-8 ${sidebarOpen ? 'ml-64' : ''}`}>
-        {children}
+      <main className={`pt-20 pb-8 px-4 sm:px-6 lg:px-8 md:ml-64 ${sidebarOpen ? 'ml-64' : ''}`}>
+        {children ?? <Outlet />}
       </main>
     </div>
   );

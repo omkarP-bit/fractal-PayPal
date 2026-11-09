@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Plus, Clock, CreditCard, AlertCircle, Info, ShieldCheck } from '../../components/ui/Icons';
-import { apiClient, Case } from '../../services/api';
+import { apiClient } from '../../services/api';
 import { useAuthStore } from '../../store/auth';
-import { Badge } from '../components/ui/Badge';
-import { Button } from '../components/ui/Button';
+import { Badge } from '../../components/ui/Badge';
+import { Button } from '../../components/ui/Button';
 
 interface Case {
   id: string;
