@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Link, Outlet, useLocation } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
   Menu,
   Mail,
@@ -28,7 +28,16 @@ export function Layout({ children }: { children: React.ReactNode }) {
   const [manualRole, setManualRole] = useState<'CUSTOMER' | 'MERCHANT' | null>(null);
   const [dark, setDark] = useState(() => document.documentElement.classList.contains('dark'));
   const location = useLocation();
+  const navigate = useNavigate();
   const { user, logout } = useAuthStore();
+
+  // Unauthenticated visitors always land on the login screen
+  // (instead of a broken "Guest" dashboard).
+  useEffect(() => {
+    if (!user && location.pathname !== '/login') {
+      navigate('/login', { replace: true });
+    }
+  }, [user, location.pathname, navigate]);
 
   // Sync nav with the signed-in user (merchant users see merchant links);
   // an explicit manual switch always takes precedence and is never undone.
@@ -110,7 +119,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
           <button
             onClick={() => {
               logout();
-              window.location.reload();
+              navigate('/login');
             }}
             className="w-full flex items-center justify-center px-4 py-2.5 rounded-lg border border-gray-200 text-sm font-medium text-red-600 hover:bg-red-50 mt-2 transition-colors"
           >
