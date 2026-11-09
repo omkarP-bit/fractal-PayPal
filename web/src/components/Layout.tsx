@@ -25,10 +25,28 @@ const NAV_ITEMS = [
 export function Layout({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [role, setRole] = useState<'CUSTOMER' | 'MERCHANT' | null>('CUSTOMER');
+  const [dark, setDark] = useState(() => document.documentElement.classList.contains('dark'));
   const location = useLocation();
   const { user, logout } = useAuthStore();
 
-  const isActive = (path: string) => location.pathname === path || location.pathname.startsWith(path + '/');
+  const visibleItems = NAV_ITEMS.filter((item) => item.role === role);
+  // Highlight only the most specific match, so a child route
+  // (e.g. /customer/cases/new) doesn't leave its parent (/customer/cases) lit too.
+  const activePath = visibleItems
+    .map((item) => item.path)
+    .filter((path) => location.pathname === path || location.pathname.startsWith(`${path}/`))
+    .sort((a, b) => b.length - a.length)[0];
+
+  const toggleTheme = () => {
+    const next = !dark;
+    setDark(next);
+    document.documentElement.classList.toggle('dark', next);
+    try {
+      localStorage.setItem('theme', next ? 'dark' : 'light');
+    } catch {
+      // ignore storage errors (e.g. private mode)
+    }
+  };
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -37,7 +55,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
       )}
 
       <aside
-        className={`fixed left-0 top-0 bottom-0 w-64 bg-white border-r border-gray-200 z-50 transition-transform duration-300 md:translate-x-0 ${
+        className={`fixed left-0 top-0 bottom-0 w-64 bg-white dark:bg-gray-800 border-r border-gray-200 z-50 transition-transform duration-300 md:translate-x-0 ${
           sidebarOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
@@ -59,14 +77,14 @@ export function Layout({ children }: { children: React.ReactNode }) {
         </div>
 
         <nav className="p-4 space-y-1">
-          {NAV_ITEMS.filter((item) => item.role === role || item.role === 'CUSTOMER').map((item) => (
+          {visibleItems.map((item) => (
             <Link
               key={item.path}
               to={item.path}
               className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-                isActive(item.path)
-                  ? 'bg-paypal-50 text-paypal-600 border-r-2 border-paypal-600'
-                  : 'text-gray-600 hover:bg-gray-50 hover:text-paypal-600'
+                activePath === item.path
+                  ? 'bg-paypal-50 text-paypal-600 border-r-2 border-paypal-600 dark:text-paypal-300'
+                  : 'text-gray-600 hover:bg-gray-50 hover:text-paypal-600 dark:hover:text-paypal-300'
               }`}
             >
               <item.icon className="w-4 h-4" />
@@ -95,7 +113,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
         </div>
       </aside>
 
-      <header className="sticky top-0 z-40 border-b border-gray-200 bg-white/95 backdrop-blur-md md:ml-64">
+      <header className="sticky top-0 z-40 border-b border-gray-200 bg-white/95 dark:bg-gray-800/95 backdrop-blur-md md:ml-64">
         <div className="flex items-center justify-between px-6 py-3">
           <button
             onClick={() => setSidebarOpen(!sidebarOpen)}
@@ -113,6 +131,35 @@ export function Layout({ children }: { children: React.ReactNode }) {
               />
             </div>
             <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={toggleTheme}
+                role="switch"
+                aria-checked={dark}
+                aria-label={dark ? 'Switch to light mode' : 'Switch to dark mode'}
+                title="Toggle dark mode"
+                className="relative flex h-8 w-[4.25rem] shrink-0 items-center rounded-full border border-gray-200 bg-gray-100 p-0.5 transition"
+              >
+                <span
+                  className={`absolute inset-y-0.5 left-0.5 w-8 rounded-full bg-white shadow-sm transition-transform duration-300 ease-out dark:bg-gray-400 ${
+                    dark ? 'translate-x-8' : 'translate-x-0'
+                  }`}
+                />
+                <span
+                  className={`relative z-10 flex w-8 justify-center text-sm leading-none transition-transform duration-500 ${
+                    dark ? '-rotate-180 scale-75 opacity-50' : 'rotate-0 scale-100 opacity-100'
+                  }`}
+                >
+                  ☀️
+                </span>
+                <span
+                  className={`relative z-10 flex w-8 justify-center text-sm leading-none transition-transform duration-500 ${
+                    dark ? 'rotate-0 scale-100 opacity-100' : 'rotate-180 scale-75 opacity-50'
+                  }`}
+                >
+                  🌙
+                </span>
+              </button>
               <span className="hidden sm:block text-sm text-gray-500">{user?.kind ?? 'Guest'}</span>
               <div className="h-8 w-8 rounded-full bg-paypal-600 flex items-center justify-center text-white text-sm font-medium">
                 {user?.kind?.[0]?.toUpperCase() ?? 'G'}

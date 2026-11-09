@@ -121,7 +121,7 @@ export function MerchantCaseDetail() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-6">
-          <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-6">
+          <div className="bg-white dark:bg-gray-800 border border-gray-200 rounded-lg shadow-sm p-6">
             <div className="flex items-center gap-2 mb-4">
               <CreditCard className="w-4 h-4 text-gray-500" />
               <h3 className="font-medium text-gray-900">Shared State</h3>
@@ -154,7 +154,7 @@ export function MerchantCaseDetail() {
             </div>
           </div>
 
-          <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-6">
+          <div className="bg-white dark:bg-gray-800 border border-gray-200 rounded-lg shadow-sm p-6">
             <div className="flex items-center gap-2 mb-4">
               <ShieldCheck className="w-4 h-4 text-blue-500" />
               <h3 className="font-medium text-gray-900">AI Investigation (Advisory)</h3>
@@ -170,7 +170,7 @@ export function MerchantCaseDetail() {
                 </span>
               </div>
               <div className="bg-gray-50 rounded-lg p-3 border border-gray-200">
-                <p className="text-sm text-gray-800">{caseData.investigation.root_cause_hypothesis}</p>
+                <p className="text-sm text-gray-800 dark:text-gray-700">{caseData.investigation.root_cause_hypothesis}</p>
                 <div className="mt-2 flex flex-wrap gap-2">
                   {caseData.investigation.evidence_ids.map((id) => (
                     <span key={id} className="text-xs bg-blue-50 text-blue-700 px-2 py-1 rounded border border-blue-200">
@@ -183,7 +183,7 @@ export function MerchantCaseDetail() {
             </div>
           </div>
 
-          <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-6">
+          <div className="bg-white dark:bg-gray-800 border border-gray-200 rounded-lg shadow-sm p-6">
             <div className="flex items-center gap-2 mb-4">
               <Lock className="w-4 h-4 text-green-500" />
               <h3 className="font-medium text-gray-900">PolicyGuard Decision</h3>
@@ -208,7 +208,7 @@ export function MerchantCaseDetail() {
             </div>
           </div>
 
-          <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-6">
+          <div className="bg-white dark:bg-gray-800 border border-gray-200 rounded-lg shadow-sm p-6">
             <div className="flex items-center gap-2 mb-4">
               <FileText className="w-4 h-4 text-gray-500" />
               <h3 className="font-medium text-gray-900">Actions</h3>
@@ -231,7 +231,7 @@ export function MerchantCaseDetail() {
         </div>
 
         <div className="lg:col-span-1 space-y-6">
-          <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-6">
+          <div className="bg-white dark:bg-gray-800 border border-gray-200 rounded-lg shadow-sm p-6">
             <h3 className="font-medium text-gray-900 mb-4">Audit Timeline</h3>
             <div className="space-y-3">
               {[
@@ -258,7 +258,7 @@ export function MerchantCaseDetail() {
             </div>
           </div>
 
-          <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-6">
+          <div className="bg-white dark:bg-gray-800 border border-gray-200 rounded-lg shadow-sm p-6">
             <h3 className="font-medium text-gray-900 mb-4">Your Access (Admin)</h3>
             <div className="space-y-3">
               <div className="flex items-center gap-2 p-2 rounded-lg bg-green-50 border border-green-100">

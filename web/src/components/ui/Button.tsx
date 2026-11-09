@@ -16,9 +16,9 @@ export function Button({
 }: ButtonProps) {
   const variants = {
     primary: 'bg-paypal-600 hover:bg-paypal-700 text-white',
-    secondary: 'bg-white hover:bg-gray-50 text-gray-700 border border-gray-200',
+    secondary: 'bg-white dark:bg-gray-800 hover:bg-gray-50 text-gray-700 border border-gray-200',
     outline: 'border border-gray-300 hover:bg-gray-50 text-gray-700',
-    danger: 'bg-red-600 hover:bg-red-700 text-white',
+    danger: 'bg-red-600 hover:bg-red-700 text-white dark:bg-[#dc2626] dark:hover:bg-[#b91c1c]',
     ghost: 'text-gray-600 hover:bg-gray-100 hover:text-gray-900',
   };
 

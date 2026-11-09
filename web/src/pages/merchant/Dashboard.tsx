@@ -175,7 +175,7 @@ export function MerchantDashboard() {
             className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${
               filter === f
                 ? 'bg-paypal-600 text-white'
-                : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'
+                : 'bg-white dark:bg-gray-800 text-gray-600 border border-gray-200 hover:bg-gray-50'
             }`}
           >
             {f.charAt(0).toUpperCase() + f.slice(1).replace('-', ' ')}

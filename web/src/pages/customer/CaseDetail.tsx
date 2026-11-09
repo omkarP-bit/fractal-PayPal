@@ -145,18 +145,18 @@ export function CustomerCaseDetail() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-6">
-          <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-6">
+          <div className="bg-white dark:bg-gray-800 border border-gray-200 rounded-lg shadow-sm p-6">
             <div className="flex items-center gap-2 mb-4">
               <div className="w-2 h-2 rounded-full bg-blue-500"></div>
               <h3 className="font-medium text-gray-900">What's happening</h3>
             </div>
             <div className="bg-blue-50 rounded-lg p-4 border border-blue-100">
-              <p className="text-gray-800 text-sm">{caseData.summary}</p>
+              <p className="text-gray-800 text-sm dark:text-gray-700">{caseData.summary}</p>
               <p className="mt-2 text-sm font-medium text-blue-800">{caseData.next_step}</p>
             </div>
           </div>
 
-          <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-6">
+          <div className="bg-white dark:bg-gray-800 border border-gray-200 rounded-lg shadow-sm p-6">
             <div className="flex items-center gap-2 mb-4">
               <CreditCard className="w-4 h-4 text-gray-500" />
               <h3 className="font-medium text-gray-900">Payment & Order</h3>
@@ -188,7 +188,7 @@ export function CustomerCaseDetail() {
         </div>
 
         <div className="lg:col-span-1 space-y-6">
-          <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-6">
+          <div className="bg-white dark:bg-gray-800 border border-gray-200 rounded-lg shadow-sm p-6">
             <h3 className="font-medium text-gray-900 mb-4">Case Timeline</h3>
             <div className="space-y-4">
               {[
@@ -209,7 +209,7 @@ export function CustomerCaseDetail() {
             </div>
           </div>
 
-          <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-6">
+          <div className="bg-white dark:bg-gray-800 border border-gray-200 rounded-lg shadow-sm p-6">
             <h3 className="font-medium text-gray-900 mb-4">Your Access</h3>
             <div className="space-y-3">
               <div className="flex items-center gap-2 p-2 rounded-lg bg-blue-50 border border-blue-100">
@@ -225,7 +225,7 @@ export function CustomerCaseDetail() {
         </div>
       </div>
 
-      <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-6">
+      <div className="bg-white dark:bg-gray-800 border border-gray-200 rounded-lg shadow-sm p-6">
         <div className="flex items-center justify-between mb-4">
           <h3 className="font-medium text-gray-900">Conversation</h3>
           <span className="text-xs text-gray-500">Shared conversation</span>
@@ -233,13 +233,13 @@ export function CustomerCaseDetail() {
         <div className="space-y-3 max-h-96 overflow-y-auto pr-2">
           <div className="flex flex-col">
             <div className="text-xs text-gray-400 mb-1">You • 10:02</div>
-            <div className="bg-paypal-50 rounded-lg p-3 text-sm text-gray-800 max-w-[80%]">
+            <div className="bg-paypal-50 rounded-lg p-3 text-sm text-gray-800 dark:text-gray-700 max-w-[80%]">
               I was charged but the store says unpaid.
             </div>
           </div>
           <div className="flex flex-col">
             <div className="text-xs text-gray-400 mb-1 text-right">Merchant • 10:06</div>
-            <div className="bg-gray-100 rounded-lg p-3 text-sm text-gray-800 max-w-[80%] ml-auto">
+            <div className="bg-gray-100 rounded-lg p-3 text-sm text-gray-800 dark:text-gray-700 max-w-[80%] ml-auto">
               We are checking your payment with our provider.
             </div>
           </div>
@@ -260,7 +260,7 @@ export function CustomerCaseDetail() {
             Send
           </button>
         </form>
-        <button className="mt-3 w-full flex items-center justify-center gap-2 text-sm text-paypal-600 font-medium py-2 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors">
+        <button className="mt-3 w-full flex items-center justify-center gap-2 text-sm text-paypal-600 font-medium py-2 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors dark:text-paypal-300">
           <FileText className="w-3 h-3" /> Add Evidence
         </button>
       </div>

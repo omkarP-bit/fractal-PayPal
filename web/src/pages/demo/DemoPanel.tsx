@@ -72,7 +72,7 @@ export function DemoPanel() {
           </span>
           <button
             onClick={toggleHandler}
-            className="px-3 py-1.5 rounded text-sm font-medium text-gray-600 bg-white border border-gray-200 hover:bg-gray-100 transition-colors"
+            className="px-3 py-1.5 rounded text-sm font-medium text-gray-600 bg-white dark:bg-gray-800 border border-gray-200 hover:bg-gray-100 transition-colors"
           >
             Toggle Handler
           </button>
