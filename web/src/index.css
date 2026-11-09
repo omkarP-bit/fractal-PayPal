@@ -188,3 +188,17 @@
     @apply bg-gray-50 text-gray-700 border border-gray-200;
   }
 }
+
+/* Night mode: recharts hard-codes #666 label text and a white tooltip. */
+.dark svg text[fill="#666"] {
+  fill: #d1d5db; /* gray-300 */
+}
+
+.dark .recharts-default-tooltip {
+  background-color: #1f2937 !important; /* match .card dark bg (gray-800) */
+  border-color: #374151 !important;
+}
+
+.dark .recharts-tooltip-label {
+  color: #e5e7eb; /* gray-200 */
+}

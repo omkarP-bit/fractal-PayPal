@@ -29,7 +29,8 @@ export function Layout({ children }: { children: React.ReactNode }) {
   const location = useLocation();
   const { user, logout } = useAuthStore();
 
-  const visibleItems = NAV_ITEMS.filter((item) => item.role === role);
+  // Merchant sees all tabs (customer + merchant) — original behavior.
+  const visibleItems = NAV_ITEMS.filter((item) => item.role === role || item.role === 'CUSTOMER');
   // Highlight only the most specific match, so a child route
   // (e.g. /customer/cases/new) doesn't leave its parent (/customer/cases) lit too.
   const activePath = visibleItems
