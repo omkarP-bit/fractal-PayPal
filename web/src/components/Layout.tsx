@@ -118,7 +118,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
       </aside>
 
       <header className="sticky top-0 z-40 border-b border-gray-200 bg-white/95 dark:bg-gray-800/95 backdrop-blur-md md:ml-64">
-        <div className="flex items-center justify-between px-6 py-3">
+        <div className="flex items-center justify-between gap-6 px-6 py-3">
           <button
             onClick={() => setSidebarOpen(!sidebarOpen)}
             className="p-2 rounded-md text-gray-400 hover:bg-gray-100 md:hidden"
@@ -126,48 +126,46 @@ export function Layout({ children }: { children: React.ReactNode }) {
             <span className="sr-only">Open menu</span>
             <Menu className="w-5 h-5" />
           </button>
-          <div className="flex items-center gap-6">
-            <div className="hidden md:flex flex-1 max-w-md">
-              <input
-                type="text"
-                placeholder="Search cases..."
-                className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-gray-50 text-sm focus:ring-2 focus:ring-paypal-600 focus:border-paypal-600 transition-colors"
+          <div className="hidden md:flex flex-1 max-w-2xl">
+            <input
+              type="text"
+              placeholder="Search cases..."
+              className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-gray-50 text-sm focus:ring-2 focus:ring-paypal-600 focus:border-paypal-600 transition-colors"
+            />
+          </div>
+          <div className="flex items-center gap-3 ml-auto">
+            <button
+              type="button"
+              onClick={toggleTheme}
+              role="switch"
+              aria-checked={dark}
+              aria-label={dark ? 'Switch to light mode' : 'Switch to dark mode'}
+              title="Toggle dark mode"
+              className="relative flex h-8 w-[4.25rem] shrink-0 items-center rounded-full border border-gray-200 bg-gray-100 p-0.5 transition"
+            >
+              <span
+                className={`absolute inset-y-0.5 left-0.5 w-8 rounded-full bg-white shadow-sm transition-transform duration-300 ease-out dark:bg-gray-400 ${
+                  dark ? 'translate-x-8' : 'translate-x-0'
+                }`}
               />
-            </div>
-            <div className="flex items-center gap-3">
-              <button
-                type="button"
-                onClick={toggleTheme}
-                role="switch"
-                aria-checked={dark}
-                aria-label={dark ? 'Switch to light mode' : 'Switch to dark mode'}
-                title="Toggle dark mode"
-                className="relative flex h-8 w-[4.25rem] shrink-0 items-center rounded-full border border-gray-200 bg-gray-100 p-0.5 transition"
+              <span
+                className={`relative z-10 flex w-8 justify-center text-sm leading-none transition-transform duration-500 ${
+                  dark ? '-rotate-180 scale-75 opacity-50' : 'rotate-0 scale-100 opacity-100'
+                }`}
               >
-                <span
-                  className={`absolute inset-y-0.5 left-0.5 w-8 rounded-full bg-white shadow-sm transition-transform duration-300 ease-out dark:bg-gray-400 ${
-                    dark ? 'translate-x-8' : 'translate-x-0'
-                  }`}
-                />
-                <span
-                  className={`relative z-10 flex w-8 justify-center text-sm leading-none transition-transform duration-500 ${
-                    dark ? '-rotate-180 scale-75 opacity-50' : 'rotate-0 scale-100 opacity-100'
-                  }`}
-                >
-                  ☀️
-                </span>
-                <span
-                  className={`relative z-10 flex w-8 justify-center text-sm leading-none transition-transform duration-500 ${
-                    dark ? 'rotate-0 scale-100 opacity-100' : 'rotate-180 scale-75 opacity-50'
-                  }`}
-                >
-                  🌙
-                </span>
-              </button>
-              <span className="hidden sm:block text-sm text-gray-500">{user?.kind ?? 'Guest'}</span>
-              <div className="h-8 w-8 rounded-full bg-paypal-600 flex items-center justify-center text-white text-sm font-medium">
-                {user?.kind?.[0]?.toUpperCase() ?? 'G'}
-              </div>
+                ☀️
+              </span>
+              <span
+                className={`relative z-10 flex w-8 justify-center text-sm leading-none transition-transform duration-500 ${
+                  dark ? 'rotate-0 scale-100 opacity-100' : 'rotate-180 scale-75 opacity-50'
+                }`}
+              >
+                🌙
+              </span>
+            </button>
+            <span className="hidden sm:block text-sm text-gray-500">{user?.kind ?? 'Guest'}</span>
+            <div className="h-8 w-8 rounded-full bg-paypal-600 flex items-center justify-center text-white text-sm font-medium">
+              {user?.kind?.[0]?.toUpperCase() ?? 'G'}
             </div>
           </div>
         </div>
