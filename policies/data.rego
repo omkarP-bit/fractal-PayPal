@@ -1,10 +1,17 @@
-package policy_data
+package fractal
+
+import rego.v1
 
 config := {
     "supported_input_versions": ["1.0"],
     "max_evidence_age_seconds": 120,
-    "anomaly_approval_threshold": 0.8
+    "anomaly_approval_threshold": 0.8,
 }
+
+# Phase 11: the anomaly signal is DISABLED by default. While this is false the
+# system behaves exactly as Phase 10 (tighten-only invariant 1). Tests enable it
+# with `with data.fractal.anomaly_detection_enabled as true`.
+anomaly_detection_enabled := false
 
 actions := {
     "RECONCILE_MERCHANT_ORDER": {
@@ -35,6 +42,12 @@ meta := {
 packs := {
     "us_reg_e": {
         "enabled": false,
-        "legal_review": "PENDING"
+        "legal_basis": "legitimate_interest",
+        "notes": "Example regulation pack; disabled by default."
+    },
+    "paypal_integration": {
+        "enabled": true,
+        "legal_basis": "contract",
+        "notes": "PayPal Sandbox integration pack."
     }
 }
