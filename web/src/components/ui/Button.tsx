@@ -1,45 +1,103 @@
-import { ButtonHTMLAttributes } from 'react';
+import type { ButtonHTMLAttributes, ReactNode } from 'react';
+import { Loader2 } from 'lucide-react';
+import { cn } from '../../lib/cn';
 
-interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: 'primary' | 'secondary' | 'outline' | 'danger' | 'ghost';
-  size?: 'sm' | 'md' | 'lg';
+type Variant = 'primary' | 'secondary' | 'outline' | 'tertiary' | 'danger' | 'ghost';
+type Size = 'sm' | 'md' | 'lg';
+
+export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
+  variant?: Variant;
+  size?: Size;
   isLoading?: boolean;
+  loadingText?: string;
+  icon?: ReactNode;
 }
+
+const VARIANTS: Record<Variant, string> = {
+  primary:
+    'bg-yellow text-[color:var(--text-on-yellow)] hover:bg-yellow-hover shadow-none',
+  secondary: 'bg-blue text-white hover:bg-blue-hover',
+  outline: 'border border-line-strong bg-surface text-ink hover:bg-surface-muted',
+  tertiary: 'text-blue hover:underline underline-offset-4',
+  danger: 'border border-danger bg-transparent text-danger hover:bg-danger-bg',
+  ghost: 'text-muted hover:bg-surface-muted hover:text-ink',
+};
+
+const SIZES: Record<Size, string> = {
+  sm: 'h-9 px-3 text-meta',
+  md: 'h-10 px-4 text-body',
+  lg: 'h-11 px-6 text-body',
+};
 
 export function Button({
   className,
   variant = 'primary',
   size = 'md',
   isLoading = false,
+  loadingText,
+  icon,
   children,
+  disabled,
+  type = 'button',
   ...props
 }: ButtonProps) {
-  const variants = {
-    primary: 'bg-paypal-600 hover:bg-paypal-700 text-white',
-    secondary: 'bg-white dark:bg-gray-800 hover:bg-gray-50 text-gray-700 border border-gray-200',
-    outline: 'border border-gray-300 hover:bg-gray-50 text-gray-700',
-    danger: 'bg-red-600 hover:bg-red-700 text-white dark:bg-[#dc2626] dark:hover:bg-[#b91c1c]',
-    ghost: 'text-gray-600 hover:bg-gray-100 hover:text-gray-900',
-  };
-
-  const sizes = {
-    sm: 'px-3 py-1.5 text-sm',
-    md: 'px-4 py-2 text-sm',
-    lg: 'px-6 py-3 text-base',
-  };
-
   return (
     <button
-      className={`inline-flex items-center justify-center gap-2 rounded-md font-medium transition-colors disabled:opacity-50 disabled:pointer-events-none ${variants[variant]} ${sizes[size]} ${className}`}
-      disabled={isLoading}
+      type={type}
+      className={cn(
+        'inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-pill font-semibold transition-[background-color,color,transform,border-color] duration-150 active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50',
+        VARIANTS[variant],
+        SIZES[size],
+        className,
+      )}
+      disabled={disabled || isLoading}
+      aria-busy={isLoading || undefined}
       {...props}
     >
-      {isLoading && (
-        <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24">
-          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938V12a6 6 0 016-6 6 6 0 016 6 6 6 0 016 6 6 6 0 016 6 6 6 0 016 6 6 6v4c0-2.007-1.179-3.93-3-5.938V12c0-1.849-.729-3.473-1.85-4.754z"></path>
-        </svg>
+      {isLoading ? (
+        <>
+          <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+          <span>{loadingText ?? children}</span>
+        </>
+      ) : (
+        <>
+          {icon}
+          {children}
+        </>
       )}
+    </button>
+  );
+}
+
+export interface IconButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
+  label: string;
+  variant?: Variant;
+  size?: 'sm' | 'md';
+}
+
+/** A square, icon-only button. `label` becomes the accessible name and tooltip. */
+export function IconButton({
+  label,
+  className,
+  variant = 'ghost',
+  size = 'md',
+  children,
+  type = 'button',
+  ...props
+}: IconButtonProps) {
+  return (
+    <button
+      type={type}
+      aria-label={label}
+      title={label}
+      className={cn(
+        'inline-flex items-center justify-center rounded-pill transition-colors duration-150 active:scale-[0.97] disabled:pointer-events-none disabled:opacity-50',
+        VARIANTS[variant],
+        size === 'sm' ? 'h-9 w-9' : 'h-10 w-10',
+        className,
+      )}
+      {...props}
+    >
       {children}
     </button>
   );
