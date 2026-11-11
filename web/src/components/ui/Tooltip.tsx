@@ -29,7 +29,7 @@ export function Tooltip({
         role="tooltip"
         aria-hidden="true"
         className={cn(
-          'pointer-events-none absolute z-50 w-max max-w-[240px] rounded-sm bg-ink px-2 py-1 text-[12px] font-normal leading-4 text-surface opacity-0 shadow-pop transition-opacity duration-150 group-hover/tooltip:opacity-100 group-focus-within/tooltip:opacity-100',
+          'pointer-events-none absolute z-50 w-max max-w-[240px] rounded-pill border-2 border-line bg-[color:var(--ink)] px-2 py-1 text-[12px] font-bold leading-4 text-[color:var(--bg)] opacity-0 shadow-hard transition-opacity duration-100 group-hover/tooltip:opacity-100 group-focus-within/tooltip:opacity-100',
           position,
         )}
       >

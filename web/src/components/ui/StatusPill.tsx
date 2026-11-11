@@ -2,20 +2,21 @@ import type { ReactNode } from 'react';
 import { cn } from '../../lib/cn';
 import type { StatusMeta, Tone } from '../../lib/format';
 
+/** Flat status fills. Text always uses the matching *-ink token. */
 export const TONE_SURFACE: Record<Tone, string> = {
-  success: 'bg-success-bg text-success',
-  warning: 'bg-warning-bg text-warning',
-  danger: 'bg-danger-bg text-danger',
-  info: 'bg-info-bg text-info',
-  neutral: 'bg-neutral-bg text-neutral',
+  success: 'bg-success text-[color:var(--success-ink)]',
+  warning: 'bg-warning text-[color:var(--warning-ink)]',
+  danger: 'bg-danger text-[color:var(--danger-ink)]',
+  info: 'bg-info text-[color:var(--info-ink)]',
+  neutral: 'bg-neutral text-[color:var(--neutral-ink)]',
 };
 
 export const TONE_TEXT: Record<Tone, string> = {
-  success: 'text-success',
-  warning: 'text-warning',
-  danger: 'text-danger',
-  info: 'text-info',
-  neutral: 'text-neutral',
+  success: 'text-[color:var(--success-ink)]',
+  warning: 'text-[color:var(--warning-ink)]',
+  danger: 'text-[color:var(--danger-ink)]',
+  info: 'text-[color:var(--info-ink)]',
+  neutral: 'text-[color:var(--neutral-ink)]',
 };
 
 export const TONE_DOT: Record<Tone, string> = {
@@ -33,19 +34,22 @@ export interface StatusPillProps {
   withDot?: boolean;
 }
 
-/** 24px tinted pill with a dot and a text label — never color-only. */
+/** A flat, outlined status tag with a square dot and an uppercase label. */
 export function StatusPill({ meta, size = 'md', className, withDot = true }: StatusPillProps) {
   return (
     <span
       className={cn(
-        'inline-flex shrink-0 items-center gap-1.5 rounded-pill font-medium',
-        size === 'sm' ? 'h-5 px-2 text-[11px]' : 'h-6 px-2.5 text-[12px]',
+        'inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-pill border-2 border-line font-bold uppercase tracking-[0.04em]',
+        size === 'sm' ? 'h-[22px] px-1.5 text-[11px]' : 'h-[26px] px-2 text-[12px]',
         TONE_SURFACE[meta.tone],
         className,
       )}
     >
       {withDot && (
-        <span className={cn('h-1.5 w-1.5 rounded-full', TONE_DOT[meta.tone])} aria-hidden="true" />
+        <span
+          className="h-2 w-2 shrink-0 bg-[color:var(--ink)]"
+          aria-hidden="true"
+        />
       )}
       {meta.label}
     </span>
@@ -64,7 +68,7 @@ export function Tag({
   return (
     <span
       className={cn(
-        'inline-flex items-center gap-1 rounded-pill px-2 py-0.5 text-[11px] font-medium',
+        'inline-flex items-center gap-1 rounded-pill border-2 border-line px-1.5 py-0.5 text-[12px] font-bold uppercase tracking-[0.04em]',
         TONE_SURFACE[tone],
         className,
       )}

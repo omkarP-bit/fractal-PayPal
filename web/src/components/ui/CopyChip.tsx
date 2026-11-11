@@ -65,17 +65,17 @@ export function CopyChip({
         onClick={copy}
         title={accessibleTitle}
         aria-label={accessibleTitle}
-        className="group inline-flex h-6 items-center gap-1.5 rounded-sm bg-surface-muted px-1.5 font-mono text-[12px] text-ink transition-colors duration-150 hover:bg-info-bg"
+        className="group inline-flex h-6 items-center gap-1.5 rounded-pill border border-line bg-surface-alt px-1.5 font-mono text-[12px] font-medium text-ink transition-colors duration-100 hover:bg-yellow"
       >
         {!iconOnly && <span>{display}</span>}
         {copied ? (
-          <Check className="h-3 w-3 text-success" aria-hidden="true" />
+          <Check className="h-3 w-3 text-ink" aria-hidden="true" />
         ) : (
           <Copy
             className={cn(
-              'h-3 w-3 text-muted transition-opacity duration-150',
+              'h-3 w-3 text-ink transition-opacity duration-100',
               reveal
-                ? 'opacity-0 group-hover/row:opacity-70 group-focus-within/row:opacity-100'
+                ? 'opacity-0 group-hover/row:opacity-100 group-focus-within/row:opacity-100'
                 : 'opacity-70 group-hover:opacity-100',
             )}
             aria-hidden="true"

@@ -91,7 +91,7 @@ export function Conversation({
     <div className="flex h-full flex-col">
       <div
         ref={listRef}
-        className="scrollbar-thin flex max-h-[420px] min-h-[120px] flex-col gap-4 overflow-y-auto pr-1"
+        className="scrollbar-thin flex max-h-[520px] min-h-[140px] flex-col gap-4 overflow-y-auto pr-1"
         aria-live="polite"
         aria-label="Conversation"
       >
@@ -117,19 +117,21 @@ export function Conversation({
             <div
               key={message.id}
               className={cn(
-                'flex max-w-[85%] animate-fade-in-fast flex-col gap-1',
+                'flex max-w-[min(70ch,85%)] animate-fade-in-fast flex-col gap-1',
                 mine ? 'items-end self-end' : 'items-start self-start',
               )}
             >
               <div
                 className={cn(
-                  'whitespace-pre-wrap break-words rounded-lg px-3 py-2 text-body text-ink',
-                  mine ? 'bg-info-bg' : 'bg-surface-muted',
+                  'whitespace-pre-wrap break-words rounded border-2 border-line px-3 py-2 text-body shadow-hard',
+                  mine
+                    ? 'bg-[#003087] text-white'
+                    : 'bg-surface-alt text-ink',
                 )}
               >
                 {message.body}
               </div>
-              <p className="text-[11px] leading-4 text-muted">
+              <p className="font-mono text-[11px] leading-4 text-muted">
                 {mine ? 'You' : kind === 'merchant' ? 'Merchant' : 'Customer'}
                 <span aria-hidden="true"> · </span>
                 <time dateTime={message.created_at}>{formatTime(message.created_at)}</time>
@@ -146,7 +148,7 @@ export function Conversation({
           void send();
         }}
       >
-        <div className="flex items-end gap-2 rounded-md border border-line-strong bg-surface p-1.5 transition-colors focus-within:border-blue">
+        <div className="flex items-end gap-2 rounded border-2 border-line bg-surface p-1.5 transition-shadow focus-within:shadow-[4px_4px_0_var(--brand-sky)]">
           <label htmlFor="conversation-composer" className="sr-only">
             Write a message
           </label>
@@ -204,7 +206,7 @@ export function Conversation({
         <div className="mt-1.5 flex flex-wrap items-center justify-between gap-2 text-[11px] text-muted">
           <span>Enter to send, Shift + Enter for a new line</span>
           {error && (
-            <span role="alert" className="text-danger">
+            <span role="alert" className="font-bold text-[color:var(--danger-text)]">
               {error}
             </span>
           )}

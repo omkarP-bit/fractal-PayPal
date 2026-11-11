@@ -90,13 +90,13 @@ export function Dialog({
         aria-labelledby={titleId}
         aria-describedby={description ? descriptionId : undefined}
         className={cn(
-          'relative z-10 max-h-[90vh] w-full animate-slide-up overflow-y-auto rounded-lg border border-line bg-surface p-6 shadow-pop',
+          'relative z-10 max-h-[90vh] w-full animate-slide-up overflow-y-auto rounded border-2 border-line bg-surface p-6 shadow-hard-lg',
           size === 'sm' ? 'max-w-md' : 'max-w-lg',
         )}
       >
         <div className="flex items-start justify-between gap-4">
           <div>
-            <h2 id={titleId} className="text-section font-semibold text-ink">
+            <h2 id={titleId} className="text-section font-bold text-ink">
               {title}
             </h2>
             {description && (

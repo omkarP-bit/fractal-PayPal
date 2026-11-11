@@ -5,11 +5,11 @@ import type {
   SelectHTMLAttributes,
   TextareaHTMLAttributes,
 } from 'react';
-import { ChevronDown } from 'lucide-react';
+import { AlertCircle, ChevronDown } from 'lucide-react';
 import { cn } from '../../lib/cn';
 
 const controlBase =
-  'w-full rounded-md border bg-surface text-body text-ink placeholder:text-muted/70 transition-colors duration-150 focus:border-blue focus:outline-none disabled:cursor-not-allowed disabled:bg-surface-muted disabled:text-muted';
+  'w-full rounded border-2 bg-surface text-body font-medium text-ink placeholder:text-muted/70 transition-[box-shadow,border-color] duration-100 focus:border-ink focus:shadow-[4px_4px_0_var(--brand-sky)] focus:outline-none disabled:cursor-not-allowed disabled:bg-surface-alt disabled:text-muted';
 
 interface FieldShellProps {
   id: string;
@@ -25,15 +25,23 @@ function FieldShell({ id, label, hint, error, required, children, className }: F
   return (
     <div className={cn('space-y-1.5', className)}>
       {label && (
-        <label htmlFor={id} className="block text-meta font-medium text-ink">
+        <label htmlFor={id} className="block text-meta font-bold text-ink">
           {label}
-          {required && <span className="ml-1 text-danger">*</span>}
+          {required && (
+            <span className="ml-1 text-[color:var(--danger-text)]" aria-hidden="true">
+              *
+            </span>
+          )}
         </label>
       )}
       {children}
       {error ? (
-        <p id={`${id}-error`} className="text-meta text-danger">
-          {error}
+        <p id={`${id}-error`} className="flex items-start gap-1.5 text-meta font-medium text-[color:var(--danger-text)]">
+          <AlertCircle
+            className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[color:var(--danger-text)]"
+            aria-hidden="true"
+          />
+          <span>{error}</span>
         </p>
       ) : hint ? (
         <p id={`${id}-hint`} className="text-meta text-muted">
@@ -91,10 +99,10 @@ export function Input({
           aria-describedby={describedBy}
           className={cn(
             controlBase,
-            'h-11 px-3',
+            'h-12 px-3',
             leadingIcon && 'pl-10',
             trailing && 'pr-10',
-            error ? 'border-danger' : 'border-line-strong',
+            error && 'border-[color:var(--danger)]',
             className,
           )}
           {...props}
@@ -144,8 +152,8 @@ export function Textarea({
         aria-describedby={describedBy}
         className={cn(
           controlBase,
-          'min-h-[96px] resize-y px-3 py-2.5',
-          error ? 'border-danger' : 'border-line-strong',
+          'min-h-[120px] resize-y px-3 py-2.5',
+          error && 'border-[color:var(--danger)]',
           className,
         )}
         {...props}
@@ -194,8 +202,8 @@ export function Select({
           aria-describedby={describedBy}
           className={cn(
             controlBase,
-            'h-11 cursor-pointer appearance-none px-3 pr-9',
-            error ? 'border-danger' : 'border-line-strong',
+            'h-12 cursor-pointer appearance-none px-3 pr-9 font-bold',
+            error && 'border-[color:var(--danger)]',
             className,
           )}
           {...props}
@@ -207,7 +215,7 @@ export function Select({
           ))}
         </select>
         <ChevronDown
-          className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted"
+          className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink"
           aria-hidden="true"
         />
       </div>

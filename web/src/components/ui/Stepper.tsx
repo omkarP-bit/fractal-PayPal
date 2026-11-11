@@ -18,36 +18,36 @@ export function Stepper({ steps, className }: { steps: Step[]; className?: strin
         return (
           <li
             key={step.label}
-            className="relative flex flex-1 items-start gap-3 pb-5 last:pb-0 sm:flex-col sm:items-center sm:gap-0 sm:pb-0 sm:text-center"
+            className="relative flex flex-1 items-start gap-3 pb-7 last:pb-0 sm:flex-col sm:items-center sm:gap-0 sm:pb-0 sm:text-center"
           >
             {!last && (
               <span
                 aria-hidden="true"
                 className={cn(
-                  'absolute bottom-0 left-[11px] top-6 w-0.5 rounded-pill sm:bottom-auto sm:left-1/2 sm:top-[11px] sm:h-0.5 sm:w-full',
-                  nextReached ? 'bg-sky' : 'bg-line',
+                  'absolute bottom-0 left-[19px] top-10 w-1 sm:bottom-auto sm:left-1/2 sm:top-5 sm:h-1 sm:w-full sm:-translate-y-1/2',
+                  nextReached ? 'bg-blue' : 'bg-line',
                 )}
               />
             )}
             <span
               className={cn(
-                'relative z-10 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold',
-                step.state === 'complete' && 'bg-blue text-white',
+                'relative z-10 flex h-10 w-10 shrink-0 items-center justify-center rounded border-2 border-line text-[15px] font-extrabold',
+                step.state === 'complete' && 'bg-blue text-[color:var(--text-on-blue)]',
                 step.state === 'current' &&
-                  'motion-safe-pulse border-2 border-blue bg-surface text-blue ring-4 ring-info-bg',
-                step.state === 'upcoming' && 'border border-line-strong bg-surface text-muted',
+                  'bg-yellow text-[color:var(--text-on-yellow)] shadow-hard',
+                step.state === 'upcoming' && 'border-dashed bg-surface text-muted',
               )}
             >
               {step.state === 'complete' ? (
-                <Check className="h-3.5 w-3.5" aria-hidden="true" />
+                <Check className="h-5 w-5" aria-hidden="true" strokeWidth={3} />
               ) : (
                 index + 1
               )}
             </span>
             <span
               className={cn(
-                'pt-0.5 text-meta leading-5 sm:mt-2 sm:max-w-[124px] sm:pt-0',
-                step.state === 'current' ? 'font-semibold text-ink' : 'text-muted',
+                'pt-1 text-meta leading-5 sm:mt-3 sm:max-w-[132px] sm:pt-0',
+                step.state === 'current' ? 'font-bold text-ink' : 'text-muted',
               )}
             >
               {step.label}

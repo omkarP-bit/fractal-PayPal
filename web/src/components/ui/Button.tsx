@@ -15,18 +15,23 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 
 const VARIANTS: Record<Variant, string> = {
   primary:
-    'bg-yellow text-[color:var(--text-on-yellow)] hover:bg-yellow-hover shadow-none',
-  secondary: 'bg-blue text-white hover:bg-blue-hover',
-  outline: 'border border-line-strong bg-surface text-ink hover:bg-surface-muted',
-  tertiary: 'text-blue hover:underline underline-offset-4',
-  danger: 'border border-danger bg-transparent text-danger hover:bg-danger-bg',
-  ghost: 'text-muted hover:bg-surface-muted hover:text-ink',
+    'btn-lift bg-yellow text-[color:var(--text-on-yellow)] hover:bg-yellow-hover disabled:bg-[color:var(--neutral)] disabled:text-[color:var(--neutral-ink)] disabled:border-dashed',
+  secondary:
+    'btn-lift bg-blue text-[color:var(--text-on-blue)] hover:bg-blue-hover disabled:bg-[color:var(--neutral)] disabled:text-[color:var(--neutral-ink)] disabled:border-dashed',
+  outline:
+    'btn-lift bg-surface text-ink hover:bg-surface-alt disabled:bg-surface-alt disabled:text-muted disabled:border-dashed',
+  tertiary:
+    'btn-flat border-2 border-transparent bg-transparent text-blue shadow-none hover:underline hover:underline-offset-4 disabled:text-muted',
+  danger:
+    'btn-lift bg-danger text-[color:var(--danger-ink)] hover:bg-[color:var(--danger)] disabled:opacity-60',
+  ghost:
+    'btn-flat border-2 border-transparent bg-transparent text-ink shadow-none hover:bg-surface-alt disabled:text-muted',
 };
 
 const SIZES: Record<Size, string> = {
   sm: 'h-9 px-3 text-meta',
-  md: 'h-10 px-4 text-body',
-  lg: 'h-11 px-6 text-body',
+  md: 'h-11 px-5 text-body',
+  lg: 'h-12 px-6 text-body',
 };
 
 export function Button({
@@ -45,7 +50,8 @@ export function Button({
     <button
       type={type}
       className={cn(
-        'inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-pill font-semibold transition-[background-color,color,transform,border-color] duration-150 active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50',
+        'btn inline-flex select-none items-center justify-center gap-2 whitespace-nowrap rounded font-extrabold',
+        'disabled:pointer-events-none disabled:shadow-none',
         VARIANTS[variant],
         SIZES[size],
         className,
@@ -75,7 +81,7 @@ export interface IconButtonProps extends ButtonHTMLAttributes<HTMLButtonElement>
   size?: 'sm' | 'md';
 }
 
-/** A square, icon-only button. `label` becomes the accessible name and tooltip. */
+/** A 44px square, icon-only button. `label` is the accessible name and title. */
 export function IconButton({
   label,
   className,
@@ -91,9 +97,11 @@ export function IconButton({
       aria-label={label}
       title={label}
       className={cn(
-        'inline-flex items-center justify-center rounded-pill transition-colors duration-150 active:scale-[0.97] disabled:pointer-events-none disabled:opacity-50',
+        'btn inline-flex shrink-0 items-center justify-center rounded',
+        'disabled:pointer-events-none disabled:shadow-none',
         VARIANTS[variant],
-        size === 'sm' ? 'h-9 w-9' : 'h-10 w-10',
+        'border-2 border-line bg-surface text-ink shadow-hard hover:bg-surface-alt',
+        size === 'sm' ? 'h-11 w-11' : 'h-11 w-11',
         className,
       )}
       {...props}

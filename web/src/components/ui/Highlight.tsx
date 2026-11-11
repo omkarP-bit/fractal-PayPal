@@ -6,7 +6,7 @@ export function Highlight({ text, query }: { text: string; query: string }) {
     <>
       {splitHighlight(text, query).map((part, index) =>
         part.match ? (
-          <mark key={index} className="rounded-sm bg-info-bg px-0.5 font-medium text-ink">
+          <mark key={index} className="rounded-sm border border-line bg-yellow px-0.5 font-bold text-[color:var(--text-on-yellow)]">
             {part.text}
           </mark>
         ) : (
