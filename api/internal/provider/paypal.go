@@ -10,9 +10,12 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"fractal/api/internal/evidence"
 )
 
 const (
@@ -156,4 +159,185 @@ func (p *PayPal) VerifyWebhook(ctx context.Context, webhookID string, h WebhookH
 		return false, fmt.Errorf("paypal verify response: %w", err)
 	}
 	return out.VerificationStatus == "SUCCESS", nil
+}
+
+func (p *PayPal) GetTransaction(ctx context.Context, providerOrderID string) (*evidence.Transaction, error) {
+	tok, err := p.accessToken(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("paypal access token: %w", err)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
+		p.BaseURL+"/v2/checkout/orders/"+url.PathEscape(providerOrderID), nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+tok)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := p.HTTP.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("paypal get order: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, errors.New("paypal order not found")
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("paypal get order: status %d", resp.StatusCode)
+	}
+
+	var out struct {
+		ID            string `json:"id"`
+		Status        string `json:"status"`
+		PurchaseUnits []struct {
+			Amount struct {
+				Value        string `json:"value"`
+				CurrencyCode string `json:"currency_code"`
+			} `json:"amount"`
+		} `json:"purchase_units"`
+		Payments struct {
+			Captures []struct {
+				ID     string `json:"id"`
+				Status string `json:"status"`
+			} `json:"captures"`
+		} `json:"payments"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&out); err != nil {
+		return nil, fmt.Errorf("paypal get order response: %w", err)
+	}
+
+	amountMinor := int64(0)
+	currency := "USD"
+	if len(out.PurchaseUnits) > 0 {
+		currency = out.PurchaseUnits[0].Amount.CurrencyCode
+		if currency == "" {
+			currency = "USD"
+		}
+		amountMinor, err = amountStringToMinor(out.PurchaseUnits[0].Amount.Value)
+		if err != nil {
+			return nil, fmt.Errorf("paypal amount parse: %w", err)
+		}
+	}
+	captureID := ""
+	if len(out.Payments.Captures) > 0 {
+		captureID = out.Payments.Captures[0].ID
+	}
+
+	return &evidence.Transaction{
+		Provider:         "PAYPAL",
+		ProviderOrderID:  out.ID,
+		CaptureID:        captureID,
+		AmountMinor:      amountMinor,
+		Currency:         currency,
+		Status:           out.Status,
+		FetchedAt:        time.Now().UTC(),
+	}, nil
+}
+
+func amountStringToMinor(s string) (int64, error) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return 0, errors.New("empty amount")
+	}
+	neg := false
+	if strings.HasPrefix(s, "-") {
+		neg = true
+		s = s[1:]
+	}
+	parts := strings.SplitN(s, ".", 2)
+	whole := parts[0]
+	frac := ""
+	if len(parts) == 2 {
+		frac = parts[1]
+	}
+	if !isNumeric(whole) {
+		return 0, fmt.Errorf("invalid whole part: %q", whole)
+	}
+	for _, c := range frac {
+		if c < '0' || c > '9' {
+			return 0, fmt.Errorf("invalid fraction part: %q", frac)
+		}
+	}
+	switch {
+	case len(frac) == 0:
+		whole += "00"
+	case len(frac) == 1:
+		whole += frac + "0"
+	case len(frac) == 2:
+		whole += frac
+	default:
+		whole += frac[:2]
+	}
+	v, err := strconv.ParseInt(whole, 10, 64)
+	if err != nil {
+		return 0, err
+	}
+	if neg {
+		v = -v
+	}
+	return v, nil
+}
+
+func isNumeric(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, c := range s {
+		if c < '0' || c > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+func (p *PayPal) Refund(ctx context.Context, captureID string, amountMinor int64, currency string, idempotencyKey string) (string, error) {
+	tok, err := p.accessToken(ctx)
+	if err != nil {
+		return "", fmt.Errorf("paypal access token: %w", err)
+	}
+	body := map[string]any{
+		"amount": map[string]any{
+			"value":         amountStringFromMinor(amountMinor),
+			"currency_code": currency,
+		},
+	}
+	b, _ := json.Marshal(body)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
+		p.BaseURL+"/v2/payments/captures/"+url.PathEscape(captureID)+"/refund", bytes.NewReader(b))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Authorization", "Bearer "+tok)
+	req.Header.Set("Content-Type", "application/json")
+	if idempotencyKey != "" {
+		req.Header.Set("PayPal-Request-Id", idempotencyKey)
+	}
+	resp, err := p.HTTP.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("paypal refund: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+		return "", fmt.Errorf("paypal refund: status %d", resp.StatusCode)
+	}
+	var out struct {
+		ID string `json:"id"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&out); err != nil {
+		return "", fmt.Errorf("paypal refund response: %w", err)
+	}
+	return out.ID, nil
+}
+
+func amountStringFromMinor(amountMinor int64) string {
+	whole := amountMinor / 100
+	frac := amountMinor % 100
+	if frac < 0 {
+		frac = -frac
+	}
+	return fmt.Sprintf("%d.%02d", whole, frac)
+}
+
+func (p *PayPal) ListWebhookEvents(ctx context.Context) ([]WebhookEvent, error) {
+	return nil, nil
 }

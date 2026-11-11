@@ -18,8 +18,10 @@ import (
 	"fractal/api/internal/cases"
 	"fractal/api/internal/policy"
 	"fractal/api/internal/provider"
+	"fractal/api/internal/reconciler"
 	"fractal/api/internal/telemetry"
 	"fractal/api/internal/telemetry/endpoints"
+	"fractal/api/internal/webapi"
 	"fractal/api/internal/webhook"
 )
 
@@ -39,7 +41,6 @@ func main() {
 	}
 	defer pool.Close()
 
-	// Share the same database via database/sql for the webhook store/account resolver.
 	sqlDB, err := sql.Open("pgx", dsn)
 	if err != nil {
 		logger.Error("open sql db", "err", err)
@@ -49,9 +50,6 @@ func main() {
 
 	caseStore := cases.NewStore(pool)
 
-	// Phase 11: anomaly scoring gate. Default OFF (score stays null ->
-	// identical behavior to Phase 10). If the shipped artifacts fail to load
-	// we disable scoring rather than guess — null is always safe.
 	anomalyEnabled := false
 	switch os.Getenv("FRACTAL_ANOMALY_ENABLED") {
 	case "true", "1", "yes":
@@ -69,14 +67,12 @@ func main() {
 
 	caseHandlers := cases.NewHandlers(caseStore, anomalyEnabled)
 
-	// OpenTelemetry tracer (OTLP -> Elastic).
 	if tp, err := telemetry.InitTracer(os.Getenv("OTEL_ENDPOINT")); err != nil {
 		slog.Warn("tracer init failed", "err", err)
 	} else {
 		defer tp.Shutdown(context.Background())
 	}
 
-	// ---- PayPal provider + webhook handler ----
 	clientID := os.Getenv("PAYPAL_CLIENT_ID")
 	clientSecret := os.Getenv("PAYPAL_CLIENT_SECRET")
 	baseURL := os.Getenv("PAYPAL_BASE_URL")
@@ -85,6 +81,9 @@ func main() {
 	}
 
 	paypal := provider.NewPayPal(baseURL, clientID, clientSecret, logger)
+
+	opaClient := policy.NewClient(os.Getenv("OPA_URL"))
+	web := webapi.New(pool, logger, opaClient, paypal, anomalyEnabled)
 
 	wake, wakeCh := webhook.NewWaker()
 	h := &webhook.Handler{
@@ -96,13 +95,40 @@ func main() {
 		Log:      logger,
 	}
 
-	// Background worker: drains RECEIVED webhook_events and processes them.
 	go (&webhook.Worker{
 		DB:   sqlDB,
 		Proc: &noopProcessor{},
 		Wake: wakeCh,
 		Log:  logger,
 	}).Run(context.Background())
+
+	reconcilerEnabled := false
+	switch os.Getenv("FRACTAL_RECONCILER_ENABLED") {
+	case "true", "1", "yes":
+		reconcilerEnabled = true
+	}
+	if reconcilerEnabled {
+		systemCustomerID := os.Getenv("FRACTAL_SYSTEM_CUSTOMER_ID")
+		if systemCustomerID == "" {
+			var foundID string
+			if err := pool.QueryRow(context.Background(), `
+				SELECT id::text FROM users WHERE kind = 'CUSTOMER' AND status = 'ACTIVE'
+				ORDER BY created_at ASC LIMIT 1`).Scan(&foundID); err == nil {
+				systemCustomerID = foundID
+			}
+		}
+		staleAfter := 15 * time.Minute
+		if d, err := time.ParseDuration(os.Getenv("FRACTAL_RECONCILER_STALE_AFTER")); err == nil && d > 0 {
+			staleAfter = d
+		}
+		recJob := reconciler.New(pool, logger, reconciler.Config{
+			StaleAfter:       staleAfter,
+			SystemCustomerID: systemCustomerID,
+		})
+		go recJob.RunLoop(context.Background())
+		slog.Info("proactive reconciler enabled",
+			"stale_after", staleAfter, "system_customer_id", systemCustomerID)
+	}
 
 	mux := http.NewServeMux()
 
@@ -131,18 +157,24 @@ func main() {
 	mux.Handle("GET /cases/{id}", middleware(auth.RequireAuth(http.HandlerFunc(caseHandlers.Get))))
 	mux.Handle("POST /cases", middleware(auth.RequireAuth(http.HandlerFunc(caseHandlers.Create))))
 
+	mux.Handle("POST /api/v1/auth/dev-login", middleware(http.HandlerFunc(web.DevLogin)))
+	mux.Handle("GET /api/v1/cases", middleware(auth.RequireAuth(http.HandlerFunc(web.ListCases))))
+	mux.Handle("POST /api/v1/cases", middleware(auth.RequireAuth(http.HandlerFunc(web.CreateCase))))
+	mux.Handle("GET /api/v1/cases/{id}", middleware(auth.RequireAuth(http.HandlerFunc(web.GetCase))))
+	mux.Handle("GET /api/v1/cases/{id}/timeline", middleware(auth.RequireAuth(http.HandlerFunc(web.Timeline))))
+	mux.Handle("GET /api/v1/cases/{id}/messages", middleware(auth.RequireAuth(http.HandlerFunc(web.Messages))))
+	mux.Handle("POST /api/v1/cases/{id}/messages", middleware(auth.RequireAuth(http.HandlerFunc(web.PostMessage))))
+	mux.Handle("POST /api/v1/cases/{id}/actions", middleware(auth.RequireAuth(http.HandlerFunc(web.PostAction))))
+	mux.Handle("POST /api/v1/cases/{id}/approvals/{approvalID}", middleware(auth.RequireAuth(http.HandlerFunc(web.DecideApproval))))
+
 	mux.Handle("POST /api/v1/webhooks/paypal/{provider_account_id}", middleware(h))
 
-	// Internal read-only telemetry endpoints (agent tools, Spec C7).
 	mux.Handle("GET /internal/v1/telemetry/logs", middleware(http.HandlerFunc(endpoints.LogsByCase)))
 	mux.Handle("GET /internal/v1/telemetry/traces/{trace_id}", middleware(http.HandlerFunc(endpoints.TraceByID)))
 	mux.Handle("GET /internal/v1/telemetry/handler-error-rate", middleware(http.HandlerFunc(endpoints.HandlerErrorRate)))
 
-	// Phase 11: guard decision endpoint (fail-closed OPA client). While
-	// FRACTAL_ANOMALY_ENABLED is off, risk.anomaly_score is always null in
-	// the OPA input — Phase 10 equivalence holds by construction.
 	policyHandler := &policy.Handler{
-		Client:         policy.NewClient(os.Getenv("OPA_URL")),
+		Client:         opaClient,
 		AnomalyEnabled: anomalyEnabled,
 		Log:            logger,
 	}
@@ -182,9 +214,6 @@ func main() {
 	slog.Info("fractal-api stopped")
 }
 
-// noopProcessor is a placeholder Processor that acknowledges events without
-// side effects. Real processing (payment_transactions, evidence, cases) is
-// wired in later phases.
 type noopProcessor struct{}
 
 func (p *noopProcessor) Process(ctx context.Context, ev webhook.EventRow) error {

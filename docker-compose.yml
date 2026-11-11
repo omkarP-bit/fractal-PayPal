@@ -1,6 +1,22 @@
 version: "3.8"
 
 services:
+  postgres:
+    image: postgres:15-alpine
+    ports:
+      - "5433:5432"
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
   opa:
     image: openpolicyagent/opa:latest
     ports:
@@ -9,6 +25,32 @@ services:
     volumes:
       - ./policies:/policies
 
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.15.0
+    ports:
+      - "9200:9200"
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - ES_JAVA_OPTS=-Xms1g -Xmx1g
+    volumes:
+      - esdata:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9200/_cluster/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.15.0
+    ports:
+      - "5601:5601"
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+
   fractal-api:
     build:
       context: ./api
@@ -16,15 +58,20 @@ services:
     ports:
       - "8080:8080"
     environment:
-      - DATABASE_URL=${DATABASE_URL}
+      - DATABASE_URL=postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
       - FRACTAL_JWT_SECRET=${FRACTAL_JWT_SECRET}
       - PAYPAL_CLIENT_ID=${PAYPAL_CLIENT_ID}
       - PAYPAL_CLIENT_SECRET=${PAYPAL_CLIENT_SECRET}
       - PAYPAL_BASE_URL=${PAYPAL_BASE_URL}
       - PAYPAL_WEBHOOK_ID=${PAYPAL_WEBHOOK_ID}
-      - OPA_ADDR=${OPA_ADDR}
-      - ELASTICSEARCH_URL=${ELASTICSEARCH_URL}
+      - OPA_URL=http://opa:8181
+      - ELASTICSEARCH_URL=http://elasticsearch:9200
+      - MERCHANT_STORE_BASE=http://merchant-store:8090
+      - FRACTAL_PORT=8080
+      - FRACTAL_ANOMALY_ENABLED=${FRACTAL_ANOMALY_ENABLED:-false}
     depends_on:
+      postgres:
+        condition: service_healthy
       opa:
         condition: service_started
     extra_hosts:
@@ -41,6 +88,8 @@ services:
       - PAYPAL_CLIENT_ID=${PAYPAL_CLIENT_ID}
       - PAYPAL_CLIENT_SECRET=${PAYPAL_CLIENT_SECRET}
       - PAYPAL_BASE_URL=${PAYPAL_BASE_URL}
+      - FRACTAL_API_BASE=http://fractal-api:8080
+      - MERCHANT_PORT=8090
     depends_on:
       - fractal-api
 
@@ -49,9 +98,9 @@ services:
       context: ./web
       dockerfile: Dockerfile
     ports:
-      - "5173:5173"
-    environment:
-      - VITE_API_BASE=http://localhost:8080
+      - "5173:80"
+    depends_on:
+      - fractal-api
 
 volumes:
   pgdata:
