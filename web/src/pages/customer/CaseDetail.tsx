@@ -154,16 +154,16 @@ export function CustomerCaseDetail() {
 
   if (loading) {
     return (
-      <div className="mx-auto max-w-[1040px] space-y-5">
+      <div className="space-y-5">
         <Skeleton className="h-4 w-24" />
         <Skeleton className="h-8 w-48" />
         <Skeleton className="h-52 w-full rounded-lg" />
-        <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_280px]">
-          <div className="space-y-5">
+        <div className="page-grid">
+          <div className="page-grid-main space-y-5">
             <Skeleton className="h-40 w-full rounded-lg" />
             <Skeleton className="h-72 w-full rounded-lg" />
           </div>
-          <div className="space-y-5">
+          <div className="page-grid-side space-y-5">
             <Skeleton className="h-64 w-full rounded-lg" />
             <Skeleton className="h-28 w-full rounded-lg" />
           </div>
@@ -174,7 +174,7 @@ export function CustomerCaseDetail() {
 
   if (!caseData) {
     return (
-      <div className="mx-auto max-w-[720px] space-y-5">
+      <div className="space-y-5">
         <Link
           to="/customer/cases"
           className="inline-flex items-center gap-1.5 text-meta font-medium text-blue hover:underline"
@@ -226,7 +226,7 @@ export function CustomerCaseDetail() {
       }));
 
   return (
-    <div className="mx-auto max-w-[1040px] space-y-5">
+    <div className="space-y-5">
       <div>
         <Link
           to="/customer/cases"
@@ -249,8 +249,8 @@ export function CustomerCaseDetail() {
         </p>
       </div>
 
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,720px)_280px] xl:items-start">
-        <div className="min-w-0 space-y-5">
+      <div className="page-grid">
+        <div className="page-grid-main space-y-5">
           <section className={cn(PANEL, 'p-6')}>
             <h2 className="max-w-prose text-section font-semibold text-ink">{headline}</h2>
             <p className="mt-1.5 max-w-prose text-body text-muted">{supporting}</p>
@@ -300,7 +300,7 @@ export function CustomerCaseDetail() {
           </section>
         </div>
 
-        <aside className="min-w-0 space-y-5">
+        <aside className="page-grid-side space-y-5">
           <section className={cn(PANEL, 'p-4')}>
             <h2 className="text-body font-semibold text-ink">Case timeline</h2>
             <div className="mt-4">

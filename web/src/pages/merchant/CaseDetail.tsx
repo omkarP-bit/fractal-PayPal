@@ -241,13 +241,13 @@ export function MerchantCaseDetail() {
           </div>
           <Skeleton className="h-10 w-40 rounded-pill" />
         </div>
-        <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
-          <div className="space-y-5">
+        <div className="page-grid">
+          <div className="page-grid-main space-y-5">
             <Skeleton className="h-64 w-full rounded-lg" />
             <Skeleton className="h-56 w-full rounded-lg" />
             <Skeleton className="h-40 w-full rounded-lg" />
           </div>
-          <div className="space-y-5">
+          <div className="page-grid-side space-y-5">
             <Skeleton className="h-80 w-full rounded-lg" />
             <Skeleton className="h-24 w-full rounded-lg" />
           </div>
@@ -330,7 +330,7 @@ export function MerchantCaseDetail() {
 
   return (
     <div className="space-y-5">
-      <div className="sticky top-16 z-30 -mx-4 -mt-6 border-b border-line bg-bg px-4 py-3 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
+      <div className="page-sticky-header">
         <Link
           to="/merchant/cases"
           className="inline-flex items-center gap-1.5 text-meta font-medium text-blue hover:underline"
@@ -423,8 +423,8 @@ export function MerchantCaseDetail() {
         </div>
       </div>
 
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
-        <div className="min-w-0 space-y-5">
+      <div className="page-grid">
+        <div className="page-grid-main space-y-5">
           {/* Payment vs order */}
           <section className={cn(PANEL, 'p-6')}>
             <div className="mb-4 flex justify-center">
@@ -731,7 +731,7 @@ export function MerchantCaseDetail() {
           </section>
         </div>
 
-        <aside className="min-w-0 space-y-5">
+        <aside className="page-grid-side space-y-5">
           <section className={cn(PANEL, 'p-4')}>
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-2">

@@ -296,3 +296,118 @@
 .recharts-cartesian-axis-tick-value {
   fill: var(--text-muted);
 }
+
+/* ------------------------------------------------------------------ */
+/* Fluid application shell                                             */
+/* ------------------------------------------------------------------ */
+
+:root {
+  --page-pad: clamp(16px, 3vw, 48px);
+  --row-h: 56px;
+}
+
+@media (min-width: 1440px) {
+  :root {
+    --row-h: 64px;
+  }
+}
+
+@media (min-width: 1920px) {
+  :root {
+    --row-h: 72px;
+  }
+}
+
+.app-frame {
+  /* Above 2200px the app stops growing and stays anchored to the left. */
+  max-width: 2200px;
+  min-height: 100dvh;
+}
+
+.app-shell {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  min-height: calc(100dvh - 4rem);
+}
+
+@media (min-width: 640px) {
+  .app-shell {
+    grid-template-columns: 64px minmax(0, 1fr);
+  }
+}
+
+@media (min-width: 1024px) {
+  .app-shell {
+    grid-template-columns: 232px minmax(0, 1fr);
+  }
+}
+
+.app-main {
+  min-width: 0;
+  padding: var(--page-pad);
+  padding-bottom: 6rem;
+}
+
+@media (min-width: 640px) {
+  .app-main {
+    padding-bottom: var(--page-pad);
+  }
+}
+
+/* A page fills at least the space below the top bar, so short lists can
+   push their supporting content to the bottom instead of ending in a void. */
+.page-fill {
+  display: flex;
+  min-height: calc(100dvh - 4rem - (var(--page-pad) * 2));
+  flex-direction: column;
+}
+
+.page-grid {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 24px;
+}
+
+.page-grid > .page-grid-main {
+  grid-column: span 12 / span 12;
+  min-width: 0;
+}
+
+.page-grid > .page-grid-side {
+  grid-column: span 12 / span 12;
+  min-width: 0;
+}
+
+@media (min-width: 1024px) {
+  .page-grid > .page-grid-main {
+    grid-column: span 8 / span 8;
+  }
+
+  .page-grid > .page-grid-side {
+    grid-column: span 4 / span 4;
+  }
+}
+
+.page-sticky-header {
+  position: sticky;
+  top: 4rem;
+  z-index: 30;
+  margin: calc(var(--page-pad) * -1) calc(var(--page-pad) * -1) 0;
+  border-bottom: 2px solid var(--border);
+  background: var(--bg);
+  padding: 12px var(--page-pad);
+}
+
+/* List pages gain an information rail once there is room for one. */
+.list-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 24px;
+  align-items: start;
+}
+
+@media (min-width: 1920px) {
+  .list-layout {
+    grid-template-columns: minmax(0, 1fr) 320px;
+  }
+}

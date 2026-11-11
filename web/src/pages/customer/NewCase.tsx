@@ -105,7 +105,7 @@ export function NewCase() {
   };
 
   return (
-    <div className="mx-auto max-w-[560px] space-y-5">
+    <div className="space-y-5">
       <Link
         to="/customer/cases"
         className="inline-flex items-center gap-1.5 text-meta font-medium text-blue hover:underline"

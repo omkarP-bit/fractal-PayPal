@@ -150,7 +150,7 @@ function Shell() {
   };
 
   return (
-    <div className="min-h-screen bg-bg">
+    <div className="app-frame bg-bg">
       <a
         href="#main-content"
         className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[200] focus:rounded-md focus:bg-surface focus:px-4 focus:py-2 focus:text-body focus:text-blue focus:shadow-pop"
@@ -277,8 +277,8 @@ function Shell() {
         </div>
       </header>
 
-      <div className="flex">
-        <aside className="sticky top-16 hidden h-[calc(100vh-4rem)] w-16 shrink-0 flex-col border-r border-line bg-surface sm:flex lg:w-[232px]">
+      <div className="app-shell">
+        <aside className="sticky top-16 hidden h-[calc(100dvh-4rem)] min-w-0 flex-col border-r border-line bg-surface sm:flex">
           <nav aria-label="Main" className="flex flex-1 flex-col gap-1 p-2 lg:p-3">
             {navItems.map((item) => {
               const active = activePath === item.path;
@@ -312,11 +312,9 @@ function Shell() {
 
         <main
           id="main-content"
-          className="min-w-0 flex-1 px-4 pb-24 pt-6 sm:px-6 sm:pb-10 lg:px-8"
+          className="app-main"
         >
-          <div className="mx-auto w-full max-w-content">
-            <Outlet />
-          </div>
+          <Outlet />
         </main>
       </div>
 
