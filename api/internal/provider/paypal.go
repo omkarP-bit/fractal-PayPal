@@ -195,13 +195,13 @@ func (p *PayPal) GetTransaction(ctx context.Context, providerOrderID string) (*e
 				Value        string `json:"value"`
 				CurrencyCode string `json:"currency_code"`
 			} `json:"amount"`
+			Payments struct {
+				Captures []struct {
+					ID     string `json:"id"`
+					Status string `json:"status"`
+				} `json:"captures"`
+			} `json:"payments"`
 		} `json:"purchase_units"`
-		Payments struct {
-			Captures []struct {
-				ID     string `json:"id"`
-				Status string `json:"status"`
-			} `json:"captures"`
-		} `json:"payments"`
 	}
 	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&out); err != nil {
 		return nil, fmt.Errorf("paypal get order response: %w", err)
@@ -222,8 +222,8 @@ func (p *PayPal) GetTransaction(ctx context.Context, providerOrderID string) (*e
 		}
 	}
 	captureID := ""
-	if len(out.Payments.Captures) > 0 {
-		captureID = out.Payments.Captures[0].ID
+	if len(out.PurchaseUnits) > 0 && len(out.PurchaseUnits[0].Payments.Captures) > 0 {
+		captureID = out.PurchaseUnits[0].Payments.Captures[0].ID
 	}
 
 	return &evidence.Transaction{

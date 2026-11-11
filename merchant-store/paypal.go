@@ -85,6 +85,37 @@ func (p *MPayPal) CreateOrder(amountMinor int64, currency, invoiceID, returnURL,
 	return parsed.ID, approveURL, nil
 }
 
+type captureResult struct {
+	ID     string
+	Status string
+}
+
+func parseCaptures(raw []byte) (captureResult, error) {
+	var parsed struct {
+		ID            string `json:"id"`
+		Status        string `json:"status"`
+		PurchaseUnits []struct {
+			Payments struct {
+				Captures []struct {
+					ID     string `json:"id"`
+					Status string `json:"status"`
+				} `json:"captures"`
+			} `json:"payments"`
+		} `json:"purchase_units"`
+	}
+	if err := json.Unmarshal(raw, &parsed); err != nil {
+		return captureResult{}, err
+	}
+	if len(parsed.PurchaseUnits) > 0 && len(parsed.PurchaseUnits[0].Payments.Captures) > 0 {
+		capture := parsed.PurchaseUnits[0].Payments.Captures[0]
+		return captureResult{ID: capture.ID, Status: capture.Status}, nil
+	}
+	if parsed.Status == "COMPLETED" {
+		return captureResult{}, fmt.Errorf("order %s is COMPLETED but has no captures", parsed.ID)
+	}
+	return captureResult{}, fmt.Errorf("order %s is %s, not captured", parsed.ID, parsed.Status)
+}
+
 func (p *MPayPal) CaptureOrder(orderID string) (captureID string, status string, err error) {
 	token, err := p.accessToken()
 	if err != nil {
@@ -99,28 +130,41 @@ func (p *MPayPal) CaptureOrder(orderID string) (captureID string, status string,
 	}
 	defer resp.Body.Close()
 	raw, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode != http.StatusOK {
-		return "", "", fmt.Errorf("capture %d: %s", resp.StatusCode, string(raw))
+
+	if resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusCreated {
+		result, err := parseCaptures(raw)
+		if err != nil {
+			return "", "", err
+		}
+		return result.ID, result.Status, nil
 	}
-	var parsed struct {
-		ID            string `json:"id"`
-		Status        string `json:"status"`
-		PurchaseUnits []struct {
-			Payments struct {
-				Captures []struct {
-					ID     string `json:"id"`
-					Status string `json:"status"`
-				} `json:"captures"`
-			} `json:"payments"`
-		} `json:"purchase_units"`
+	if resp.StatusCode == http.StatusUnprocessableEntity && strings.Contains(string(raw), "ORDER_ALREADY_CAPTURED") {
+		return p.GetCapturedOrder(orderID)
 	}
-	if err := json.Unmarshal(raw, &parsed); err != nil {
+	return "", "", fmt.Errorf("capture %d: %s", resp.StatusCode, string(raw))
+}
+
+func (p *MPayPal) GetCapturedOrder(orderID string) (captureID string, status string, err error) {
+	token, err := p.accessToken()
+	if err != nil {
+		return "", "", fmt.Errorf("token: %w", err)
+	}
+	req, _ := http.NewRequest(http.MethodGet, p.baseURL+"/v2/checkout/orders/"+orderID, nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	resp, err := p.httpClient.Do(req)
+	if err != nil {
 		return "", "", err
 	}
-	if len(parsed.PurchaseUnits) > 0 && len(parsed.PurchaseUnits[0].Payments.Captures) > 0 {
-		return parsed.PurchaseUnits[0].Payments.Captures[0].ID, parsed.PurchaseUnits[0].Payments.Captures[0].Status, nil
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		return "", "", fmt.Errorf("get order %d: %s", resp.StatusCode, string(raw))
 	}
-	return parsed.ID, parsed.Status, nil
+	result, err := parseCaptures(raw)
+	if err != nil {
+		return "", "", err
+	}
+	return result.ID, result.Status, nil
 }
 
 func (p *MPayPal) accessToken() (string, error) {

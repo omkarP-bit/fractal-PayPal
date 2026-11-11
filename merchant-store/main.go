@@ -19,7 +19,7 @@ import (
 )
 
 var (
-	store                     = NewStore()
+	store                     = NewStore(os.Getenv("MERCHANT_STORE_PATH"))
 	paypal                    *MPayPal
 	fractalURL                string
 	merchantID                string
@@ -104,7 +104,12 @@ func handleCreateOrder(w http.ResponseWriter, r *http.Request) {
 
 	orderID := "ORDER-" + randHex(8)
 	claimToken := randHex(16)
-	o := store.Create(orderID, 4900, "USD", claimToken)
+	_, err := store.Create(orderID, 4900, "USD", claimToken)
+	if err != nil {
+		slog.Error("create order", "err", err)
+		http.Error(w, `{"error":"checkout failed"}`, http.StatusInternalServerError)
+		return
+	}
 
 	publicBase := os.Getenv("MERCHANT_PUBLIC_URL")
 	if publicBase == "" {
@@ -120,7 +125,9 @@ func handleCreateOrder(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"checkout failed"}`, http.StatusBadGateway)
 		return
 	}
-	o.ProviderOrderID = providerOrderID
+	if err := store.SetProviderOrder(orderID, providerOrderID); err != nil {
+		slog.Error("store provider order id", "order", orderID, "err", err)
+	}
 
 	if err := registerClaimToken(orderID, claimToken, email); err != nil {
 		slog.Error("register claim token", "order", orderID, "err", err)
@@ -178,26 +185,49 @@ func registerClaimToken(orderRef, claimToken, email string) error {
 // it receives and verifies that webhook.
 func handleCapture(w http.ResponseWriter, r *http.Request) {
 	orderID := r.PathValue("orderID")
-	o, ok := store.Get(orderID)
+	o, ok := store.Snapshot(orderID)
 	if !ok {
 		http.NotFound(w, r)
 		return
 	}
-	captureID, _, err := paypal.CaptureOrder(o.ProviderOrderID)
+
+	if o.CaptureID != "" {
+		renderCaptured(w, orderID, o.CaptureID, o.Status)
+		return
+	}
+
+	captureID, status, err := paypal.CaptureOrder(o.ProviderOrderID)
 	if err != nil {
 		slog.Error("paypal capture", "err", err)
 		http.Error(w, `{"error":"capture failed"}`, http.StatusBadGateway)
 		return
 	}
-	o.CaptureID = captureID
+	if status != "COMPLETED" {
+		slog.Error("paypal capture not completed", "order", orderID, "capture", captureID, "status", status)
+		http.Error(w, `{"error":"capture not completed"}`, http.StatusBadGateway)
+		return
+	}
+	if err := store.SetCapture(orderID, o.ProviderOrderID, captureID); err != nil {
+		slog.Error("record capture", "err", err)
+		http.Error(w, `{"error":"capture failed"}`, http.StatusInternalServerError)
+		return
+	}
 
+	renderCaptured(w, orderID, captureID, o.Status)
+}
+
+func renderCaptured(w http.ResponseWriter, orderID, captureID string, status OrderStatus) {
+	note := "The store still shows the order as unpaid until it receives the merchant webhook or FRACTAL reconciles it."
+	if status == OrderPaid {
+		note = "The store has marked this order as paid."
+	}
 	w.Header().Set("Content-Type", "text/html")
 	fmt.Fprintf(w, `<html><body>
 <h2>Captured</h2>
 <p>Order %s captured (capture %s). Order status: <b>%s</b>.</p>
-<p>PayPal will send a webhook to this store to update the order. If the webhook handler is broken, the order stays PAYMENT_PENDING.</p>
-<p><a href="/orders/%s">View confirmation (claim code: %s)</a></p>
-</body></html>`, orderID, captureID, o.Status, orderID, o.ClaimToken)
+<p>PayPal accepted the payment. %s</p>
+<p><a href="/orders/%s">View confirmation</a></p>
+</body></html>`, orderID, captureID, status, note, orderID)
 }
 
 // ---------- breakable merchant webhook handler (PayPal -> merchant) ----------
@@ -225,13 +255,18 @@ func handleMerchantWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	store.mu.Lock()
+	matched := ""
 	for _, o := range store.byRef {
 		if o.CaptureID == evt.Resource.ID {
-			o.Status = OrderPaid
-			o.UpdatedAt = time.Now().UTC()
+			matched = o.Ref
 		}
 	}
 	store.mu.Unlock()
+	if matched != "" {
+		if err := store.MarkPaid(matched, "", evt.Resource.ID); err != nil {
+			slog.Error("mark paid from webhook", "order", matched, "err", err)
+		}
+	}
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte(`{"status":"processed"}`))
 }
@@ -254,14 +289,18 @@ func handleConfirmationPage(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	statusNote := "payment is being confirmed"
+	if o.Status == OrderPaid {
+		statusNote = "payment confirmed"
+	}
 	html := `<html><body>
 <h2>Thank you. Order %s</h2>
-<p>Status: <b>%s</b> (payment is being confirmed)</p>
+<p>Status: <b>%s</b> (%s)</p>
 <p>Problem with this order?</p>
 <p>Your claim code: <b>%s</b></p>
 </body></html>`
 	w.Header().Set("Content-Type", "text/html")
-	fmt.Fprintf(w, html, ref, o.Status, o.ClaimToken)
+	fmt.Fprintf(w, html, ref, o.Status, statusNote, o.ClaimToken)
 }
 
 // ---------- merchant integration contract (Spec C8) ----------
@@ -317,7 +356,11 @@ func handleReconcile(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, `{"error":"amount or currency mismatch"}`)
 		return
 	}
-	store.MarkPaid(ref, reqBody.ProviderOrderID, reqBody.CaptureID)
+	if err := store.MarkPaid(ref, reqBody.ProviderOrderID, reqBody.CaptureID); err != nil {
+		slog.Error("reconcile mark paid", "order", ref, "err", err)
+		http.Error(w, `{"error":"order not found"}`, http.StatusNotFound)
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
 	fmt.Fprintf(w, `{"order_ref":"%s","status":"PAID","reconciled_at":"%s","idempotent_replay":%v}`,
 		ref, time.Now().UTC().Format(time.RFC3339), idemKey == "replay-key")

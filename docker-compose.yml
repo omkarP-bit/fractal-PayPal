@@ -92,7 +92,10 @@ services:
       - PAYPAL_BASE_URL=${PAYPAL_BASE_URL}
       - FRACTAL_API_BASE=http://fractal-api:8080
       - MERCHANT_PUBLIC_URL=${MERCHANT_PUBLIC_URL:-http://localhost:8090}
+      - MERCHANT_STORE_PATH=/data/orders.json
       - MERCHANT_PORT=8090
+    volumes:
+      - merchant-data:/data
     depends_on:
       - fractal-api
 
@@ -110,3 +113,4 @@ services:
 volumes:
   pgdata:
   esdata:
+  merchant-data:

@@ -71,9 +71,9 @@ func (p *webhookProcessor) Process(ctx context.Context, ev webhook.EventRow) err
 	// Upsert payment_transactions.
 	_, err = p.db.Exec(ctx, `
 		INSERT INTO payment_transactions (merchant_id, provider_account_id, provider, provider_order_id, capture_id, amount_minor, currency, provider_status, merchant_order_ref, last_fetched_at)
-		VALUES ($1, $2, 'PAYPAL', $3, $4, $5, $6, $7, $8, $9)
+		VALUES ($1, $2, 'PAYPAL', $3, NULLIF($4, ''), $5, $6, $7, $8, $9)
 		ON CONFLICT (provider, provider_order_id) DO UPDATE
-			SET capture_id = EXCLUDED.capture_id,
+			SET capture_id = COALESCE(EXCLUDED.capture_id, payment_transactions.capture_id),
 			    amount_minor = EXCLUDED.amount_minor,
 			    currency = EXCLUDED.currency,
 			    provider_status = EXCLUDED.provider_status,
