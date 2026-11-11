@@ -1,4 +1,4 @@
-.PHONY: up down seed mint-claim test demo lint migrate-up migrate-down test-negative test-concurrency
+.PHONY: up down seed mint-claim webhook-sync test demo lint migrate-up migrate-down test-negative test-concurrency
 
 COMPOSE := docker-compose.yml
 API_DIR := api
@@ -33,6 +33,9 @@ seed:
 
 mint-claim:
 	@cd $(API_DIR) && DATABASE_URL="$(DB_URL)" go run -tags mintclaim ./scripts/mintclaim $(ORDER) $(if $(EMAIL),$(EMAIL),buyer@example.com)
+
+webhook-sync:
+	@python3 scripts/paypal_webhook.py
 
 test:
 	@cd $(API_DIR) && go test ./...
