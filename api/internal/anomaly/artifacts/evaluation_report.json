@@ -1,0 +1,96 @@
+{
+  "data_origin": "SYNTHETIC",
+  "disclaimer": "SYNTHETIC benchmark. These metrics measure separation on generated data only and must never be reported as real-world accuracy.",
+  "feature_names": [
+    "webhook_delivery_latency_p95_s",
+    "webhook_retry_count",
+    "handler_error_rate",
+    "capture_to_order_update_s",
+    "refund_velocity_per_hour"
+  ],
+  "generated_at": "2026-11-10T10:25:20.220627+00:00",
+  "models": {
+    "baseline_thresholds": {
+      "metrics": {
+        "mean_anomaly_score": 0.03729509623260838,
+        "mean_normal_score": 0.0,
+        "precision_at_5": 1.0,
+        "roc_auc": 0.875
+      },
+      "model_version": "baseline-20261110.1",
+      "thresholds": {
+        "capture_to_order_update_s": {
+          "fence": 484.375,
+          "hard_max": 3600.0,
+          "iqr": 176.25,
+          "q1": 43.75,
+          "q3": 220.0
+        },
+        "handler_error_rate": {
+          "fence": 0.1463277072192513,
+          "hard_max": 1.0,
+          "iqr": 0.05251504010695186,
+          "q1": 0.015040106951871659,
+          "q3": 0.06755514705882353
+        },
+        "refund_velocity_per_hour": {
+          "fence": 0.33854166666666674,
+          "hard_max": 50.0,
+          "iqr": 0.13541666666666669,
+          "q1": 0.0,
+          "q3": 0.13541666666666669
+        },
+        "webhook_delivery_latency_p95_s": {
+          "fence": 371.75,
+          "hard_max": 900.0,
+          "iqr": 147.5,
+          "q1": 3.0,
+          "q3": 150.5
+        },
+        "webhook_retry_count": {
+          "fence": 17.25,
+          "hard_max": 50.0,
+          "iqr": 6.5,
+          "q1": 1.0,
+          "q3": 7.5
+        }
+      }
+    },
+    "isolation_forest": {
+      "metrics": {
+        "mean_anomaly_score": 0.5486534756721387,
+        "mean_normal_score": 0.4407633469374781,
+        "precision_at_5": 1.0,
+        "roc_auc": 1.0
+      },
+      "model_version": "iforest-20261110.1"
+    },
+    "vae_logistic": {
+      "best_baseline_auc": 1.0,
+      "decision": "not retained: AUC gain below required margin 0.05",
+      "error": null,
+      "metrics": {
+        "mean_anomaly_score": 0.5,
+        "mean_normal_score": 0.5,
+        "precision_at_5": 0.4,
+        "roc_auc": 0.5
+      },
+      "retain": false,
+      "retain_margin_required": 0.05,
+      "status": "evaluated"
+    }
+  },
+  "n_test": 24,
+  "n_test_anomalous": 12,
+  "n_train": 48,
+  "scenarios": {
+    "capture_order_lag": "captured payments see order updates minutes later",
+    "handler_error_spike": "merchant handler errors dominate",
+    "latency_spike": "webhook delivery latency p95 spikes to minutes",
+    "normal": "baseline operational traffic",
+    "refund_storm": "refund velocity 10x baseline",
+    "webhook_failure_burst": "8x webhook failures + slow deliveries (the demo moment)"
+  },
+  "seed": 7,
+  "synthetic": true
+}

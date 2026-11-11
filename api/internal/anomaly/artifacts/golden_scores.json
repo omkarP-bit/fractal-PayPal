@@ -1,0 +1,346 @@
+{
+  "cases": [
+    {
+      "baseline_score": 0.0,
+      "iforest_score": 0.42234829175757055,
+      "label": 0,
+      "merchant_id": "SYN-MER-0000",
+      "scenario": "normal",
+      "values": {
+        "capture_to_order_update_s": 51.0,
+        "handler_error_rate": 0.028985507246376812,
+        "refund_velocity_per_hour": 0.041666666666666664,
+        "webhook_delivery_latency_p95_s": 3.0,
+        "webhook_retry_count": 2.0
+      }
+    },
+    {
+      "baseline_score": 0.0,
+      "iforest_score": 0.5093945861881186,
+      "label": 1,
+      "merchant_id": "SYN-MER-0000",
+      "scenario": "handler_error_spike",
+      "values": {
+        "capture_to_order_update_s": 47.0,
+        "handler_error_rate": 0.11827956989247312,
+        "refund_velocity_per_hour": 0.0,
+        "webhook_delivery_latency_p95_s": 2.0,
+        "webhook_retry_count": 8.0
+      }
+    },
+    {
+      "baseline_score": 0.0,
+      "iforest_score": 0.42243043887984716,
+      "label": 0,
+      "merchant_id": "SYN-MER-0001",
+      "scenario": "normal",
+      "values": {
+        "capture_to_order_update_s": 52.0,
+        "handler_error_rate": 0.022988505747126436,
+        "refund_velocity_per_hour": 0.0,
+        "webhook_delivery_latency_p95_s": 3.0,
+        "webhook_retry_count": 3.0
+      }
+    },
+    {
+      "baseline_score": 0.0,
+      "iforest_score": 0.5092145776560937,
+      "label": 1,
+      "merchant_id": "SYN-MER-0001",
+      "scenario": "handler_error_spike",
+      "values": {
+        "capture_to_order_update_s": 58.0,
+        "handler_error_rate": 0.13131313131313133,
+        "refund_velocity_per_hour": 0.041666666666666664,
+        "webhook_delivery_latency_p95_s": 3.0,
+        "webhook_retry_count": 6.0
+      }
+    },
+    {
+      "baseline_score": 0.0,
+      "iforest_score": 0.4849299822808619,
+      "label": 0,
+      "merchant_id": "SYN-MER-0002",
+      "scenario": "normal",
+      "values": {
+        "capture_to_order_update_s": 35.0,
+        "handler_error_rate": 0.0136986301369863,
+        "refund_velocity_per_hour": 0.041666666666666664,
+        "webhook_delivery_latency_p95_s": 2.0,
+        "webhook_retry_count": 0.0
+      }
+    },
+    {
+      "baseline_score": 0.12980994095830026,
+      "iforest_score": 0.5747499539590576,
+      "label": 1,
+      "merchant_id": "SYN-MER-0002",
+      "scenario": "handler_error_spike",
+      "values": {
+        "capture_to_order_update_s": 52.0,
+        "handler_error_rate": 0.2571428571428571,
+        "refund_velocity_per_hour": 0.041666666666666664,
+        "webhook_delivery_latency_p95_s": 3.0,
+        "webhook_retry_count": 6.0
+      }
+    },
+    {
+      "baseline_score": 0.0,
+      "iforest_score": 0.4738578056139825,
+      "label": 0,
+      "merchant_id": "SYN-MER-0003",
+      "scenario": "normal",
+      "values": {
+        "capture_to_order_update_s": 38.0,
+        "handler_error_rate": 0.0,
+        "refund_velocity_per_hour": 0.0,
+        "webhook_delivery_latency_p95_s": 3.0,
+        "webhook_retry_count": 1.0
+      }
+    },
+    {
+      "baseline_score": 0.004931549524276397,
+      "iforest_score": 0.5350253890362916,
+      "label": 1,
+      "merchant_id": "SYN-MER-0003",
+      "scenario": "handler_error_spike",
+      "values": {
+        "capture_to_order_update_s": 43.0,
+        "handler_error_rate": 0.15053763440860216,
+        "refund_velocity_per_hour": 0.041666666666666664,
+        "webhook_delivery_latency_p95_s": 2.0,
+        "webhook_retry_count": 8.0
+      }
+    },
+    {
+      "baseline_score": 0.0,
+      "iforest_score": 0.46383595608389033,
+      "label": 0,
+      "merchant_id": "SYN-MER-0004",
+      "scenario": "normal",
+      "values": {
+        "capture_to_order_update_s": 43.0,
+        "handler_error_rate": 0.0,
+        "refund_velocity_per_hour": 0.041666666666666664,
+        "webhook_delivery_latency_p95_s": 3.0,
+        "webhook_retry_count": 1.0
+      }
+    },
+    {
+      "baseline_score": 0.08324458662830966,
+      "iforest_score": 0.5779570338176612,
+      "label": 1,
+      "merchant_id": "SYN-MER-0004",
+      "scenario": "handler_error_spike",
+      "values": {
+        "capture_to_order_update_s": 45.0,
+        "handler_error_rate": 0.21739130434782608,
+        "refund_velocity_per_hour": 0.041666666666666664,
+        "webhook_delivery_latency_p95_s": 4.0,
+        "webhook_retry_count": 7.0
+      }
+    },
+    {
+      "baseline_score": 0.0,
+      "iforest_score": 0.4349602913439161,
+      "label": 0,
+      "merchant_id": "SYN-MER-0005",
+      "scenario": "normal",
+      "values": {
+        "capture_to_order_update_s": 37.0,
+        "handler_error_rate": 0.012048192771084338,
+        "refund_velocity_per_hour": 0.0,
+        "webhook_delivery_latency_p95_s": 3.0,
+        "webhook_retry_count": 3.0
+      }
+    },
+    {
+      "baseline_score": 0.07144353455916189,
+      "iforest_score": 0.590323747872334,
+      "label": 1,
+      "merchant_id": "SYN-MER-0005",
+      "scenario": "handler_error_spike",
+      "values": {
+        "capture_to_order_update_s": 61.0,
+        "handler_error_rate": 0.2073170731707317,
+        "refund_velocity_per_hour": 0.041666666666666664,
+        "webhook_delivery_latency_p95_s": 2.0,
+        "webhook_retry_count": 8.0
+      }
+    },
+    {
+      "baseline_score": 0.0,
+      "iforest_score": 0.4438315058886915,
+      "label": 0,
+      "merchant_id": "SYN-MER-0006",
+      "scenario": "normal",
+      "values": {
+        "capture_to_order_update_s": 48.0,
+        "handler_error_rate": 0.034482758620689655,
+        "refund_velocity_per_hour": 0.0,
+        "webhook_delivery_latency_p95_s": 4.0,
+        "webhook_retry_count": 3.0
+      }
+    },
+    {
+      "baseline_score": 0.008807181269069871,
+      "iforest_score": 0.5292236967162393,
+      "label": 1,
+      "merchant_id": "SYN-MER-0006",
+      "scenario": "handler_error_spike",
+      "values": {
+        "capture_to_order_update_s": 48.0,
+        "handler_error_rate": 0.15384615384615385,
+        "refund_velocity_per_hour": 0.0,
+        "webhook_delivery_latency_p95_s": 3.0,
+        "webhook_retry_count": 7.0
+      }
+    },
+    {
+      "baseline_score": 0.0,
+      "iforest_score": 0.4337925653239447,
+      "label": 0,
+      "merchant_id": "SYN-MER-0007",
+      "scenario": "normal",
+      "values": {
+        "capture_to_order_update_s": 49.0,
+        "handler_error_rate": 0.01,
+        "refund_velocity_per_hour": 0.0,
+        "webhook_delivery_latency_p95_s": 2.0,
+        "webhook_retry_count": 2.0
+      }
+    },
+    {
+      "baseline_score": 0.008807181269069871,
+      "iforest_score": 0.5361839724191133,
+      "label": 1,
+      "merchant_id": "SYN-MER-0007",
+      "scenario": "handler_error_spike",
+      "values": {
+        "capture_to_order_update_s": 41.0,
+        "handler_error_rate": 0.15384615384615385,
+        "refund_velocity_per_hour": 0.0,
+        "webhook_delivery_latency_p95_s": 3.0,
+        "webhook_retry_count": 7.0
+      }
+    },
+    {
+      "baseline_score": 0.0,
+      "iforest_score": 0.4223515694774617,
+      "label": 0,
+      "merchant_id": "SYN-MER-0008",
+      "scenario": "normal",
+      "values": {
+        "capture_to_order_update_s": 41.0,
+        "handler_error_rate": 0.015384615384615385,
+        "refund_velocity_per_hour": 0.0,
+        "webhook_delivery_latency_p95_s": 3.0,
+        "webhook_retry_count": 1.0
+      }
+    },
+    {
+      "baseline_score": 0.02382525428014455,
+      "iforest_score": 0.5483714115582754,
+      "label": 1,
+      "merchant_id": "SYN-MER-0008",
+      "scenario": "handler_error_spike",
+      "values": {
+        "capture_to_order_update_s": 54.0,
+        "handler_error_rate": 0.16666666666666666,
+        "refund_velocity_per_hour": 0.0,
+        "webhook_delivery_latency_p95_s": 3.0,
+        "webhook_retry_count": 8.0
+      }
+    },
+    {
+      "baseline_score": 0.0,
+      "iforest_score": 0.4298073950784629,
+      "label": 0,
+      "merchant_id": "SYN-MER-0009",
+      "scenario": "normal",
+      "values": {
+        "capture_to_order_update_s": 45.0,
+        "handler_error_rate": 0.010101010101010102,
+        "refund_velocity_per_hour": 0.0,
+        "webhook_delivery_latency_p95_s": 3.0,
+        "webhook_retry_count": 3.0
+      }
+    },
+    {
+      "baseline_score": 0.0,
+      "iforest_score": 0.5195068229322672,
+      "label": 1,
+      "merchant_id": "SYN-MER-0009",
+      "scenario": "handler_error_spike",
+      "values": {
+        "capture_to_order_update_s": 36.0,
+        "handler_error_rate": 0.12345679012345678,
+        "refund_velocity_per_hour": 0.041666666666666664,
+        "webhook_delivery_latency_p95_s": 3.0,
+        "webhook_retry_count": 8.0
+      }
+    },
+    {
+      "baseline_score": 0.0,
+      "iforest_score": 0.4267761350915117,
+      "label": 0,
+      "merchant_id": "SYN-MER-0010",
+      "scenario": "normal",
+      "values": {
+        "capture_to_order_update_s": 43.0,
+        "handler_error_rate": 0.011764705882352941,
+        "refund_velocity_per_hour": 0.041666666666666664,
+        "webhook_delivery_latency_p95_s": 3.0,
+        "webhook_retry_count": 1.0
+      }
+    },
+    {
+      "baseline_score": 0.0313342907856819,
+      "iforest_score": 0.567827928455086,
+      "label": 1,
+      "merchant_id": "SYN-MER-0010",
+      "scenario": "handler_error_spike",
+      "values": {
+        "capture_to_order_update_s": 33.0,
+        "handler_error_rate": 0.17307692307692307,
+        "refund_velocity_per_hour": 0.0,
+        "webhook_delivery_latency_p95_s": 2.0,
+        "webhook_retry_count": 6.0
+      }
+    },
+    {
+      "baseline_score": 0.0,
+      "iforest_score": 0.43023822642959614,
+      "label": 0,
+      "merchant_id": "SYN-MER-0011",
+      "scenario": "normal",
+      "values": {
+        "capture_to_order_update_s": 55.0,
+        "handler_error_rate": 0.018518518518518517,
+        "refund_velocity_per_hour": 0.041666666666666664,
+        "webhook_delivery_latency_p95_s": 2.0,
+        "webhook_retry_count": 3.0
+      }
+    },
+    {
+      "baseline_score": 0.08533763551728611,
+      "iforest_score": 0.5860625874551272,
+      "label": 1,
+      "merchant_id": "SYN-MER-0011",
+      "scenario": "handler_error_spike",
+      "values": {
+        "capture_to_order_update_s": 34.0,
+        "handler_error_rate": 0.2191780821917808,
+        "refund_velocity_per_hour": 0.041666666666666664,
+        "webhook_delivery_latency_p95_s": 2.0,
+        "webhook_retry_count": 6.0
+      }
+    }
+  ],
+  "data_origin": "SYNTHETIC",
+  "model_versions": {
+    "baseline": "baseline-20261110.1",
+    "iforest": "iforest-20261110.1",
+    "vae": null
+  }
+}
