@@ -162,7 +162,14 @@ In your PayPal Sandbox app, add a webhook pointing to:
 https://<your-tunnel-host>/api/v1/webhooks/paypal/<provider_account_id>
 ```
 
-Copy the webhook ID into `PAYPAL_WEBHOOK_ID` and restart the API. Re-register when the tunnel URL changes.
+`<provider_account_id>` is `provider_accounts.id`, **not** `merchants.id`. For the seeded Acme Store:
+
+```text
+merchant id         00000000-0000-0000-0000-0000000000c1
+provider account id 00000000-0000-0000-0000-0000000000c2   <- use this in the webhook URL
+```
+
+Copy the webhook ID into `PAYPAL_WEBHOOK_ID` and restart the API. When the tunnel URL changes, run `make webhook-sync` to update the registered URL.
 
 ### 4. Open the apps
 
