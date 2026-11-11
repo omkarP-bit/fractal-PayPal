@@ -1,8 +1,8 @@
 fastapi==0.111.0
 uvicorn==0.30.0
 httpx==0.26.0
-langgraph>=0.1.0
-pydantic==2.7.0
+langgraph==0.2.60
+pydantic==2.9.2
 # Phase 11 anomaly detection (investigator/app/anomaly + tests):
 numpy==2.2.6
 scikit-learn==1.7.2

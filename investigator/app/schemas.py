@@ -12,7 +12,7 @@ class InvestigateRequest(BaseModel):
 
 
 class InvestigationSubmission(BaseModel):
-    model_config = ConfigDict(str_strip_whitespace=True)
+    model_config = ConfigDict(str_strip_whitespace=True, protected_namespaces=())
 
     run_number: int = Field(..., ge=1)
     category: str = Field(..., min_length=1, max_length=100)
@@ -23,6 +23,8 @@ class InvestigationSubmission(BaseModel):
     suggested_severity: str = Field(default="MEDIUM", pattern="^(LOW|MEDIUM|HIGH|CRITICAL)$")
     customer_explanation: Optional[str] = Field(default=None, max_length=2000)
     merchant_fix_suggestion: Optional[str] = Field(default=None, max_length=2000)
+    agent_version: str = Field(default="investigator/1.0", max_length=100)
+    model_id: str = Field(default="rules-v1", max_length=100)
 
 
 class InvestigationResponse(BaseModel):
@@ -30,3 +32,4 @@ class InvestigationResponse(BaseModel):
     run_number: int
     case_id: str
     validation_status: str
+    submission: InvestigationSubmission

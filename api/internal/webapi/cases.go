@@ -862,6 +862,7 @@ func (h *Handlers) CreateCase(w http.ResponseWriter, r *http.Request) {
 			h.Log.Warn("evidence collection failed", "case_id", caseID, "err", colErr)
 		}
 	}
+	h.runInvestigation(r.Context(), caseID, caseType, description)
 
 	detail, _, err := h.buildDetail(r.Context(), caseID, &auth.Claims{Sub: customerID, Kind: "CUSTOMER"})
 	if err != nil {

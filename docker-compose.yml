@@ -70,13 +70,31 @@ services:
       - MERCHANT_INTEGRATION_SECRET=${MERCHANT_INTEGRATION_SECRET}
       - FRACTAL_PORT=8080
       - FRACTAL_ANOMALY_ENABLED=${FRACTAL_ANOMALY_ENABLED:-false}
+      - INVESTIGATOR_URL=http://investigator:8100
+      - INVESTIGATOR_TOKEN=${INVESTIGATOR_TOKEN:-dev-investigator-token}
     depends_on:
       postgres:
         condition: service_healthy
       opa:
         condition: service_started
+      investigator:
+        condition: service_started
     extra_hosts:
       - "host.docker.internal:host-gateway"
+
+  investigator:
+    build:
+      context: ./investigator
+      dockerfile: Dockerfile
+    ports:
+      - "8100:8100"
+    environment:
+      - FRACTAL_API_BASE=http://fractal-api:8080
+      - INVESTIGATOR_TOKEN=${INVESTIGATOR_TOKEN:-dev-investigator-token}
+      - LLM_PROVIDER=${LLM_PROVIDER:-}
+      - LLM_API_KEY=${LLM_API_KEY:-}
+      - LLM_MODEL=${LLM_MODEL:-gpt-4o-mini}
+      - LLM_BASE_URL=${LLM_BASE_URL:-https://api.openai.com/v1}
 
   merchant-store:
     build:

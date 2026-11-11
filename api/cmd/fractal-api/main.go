@@ -31,6 +31,7 @@ type webhookProcessor struct {
 	db     *pgxpool.Pool
 	paypal *provider.PayPal
 	log    *slog.Logger
+	web    *webapi.Handlers
 }
 
 func (p *webhookProcessor) Process(ctx context.Context, ev webhook.EventRow) error {
@@ -38,7 +39,7 @@ func (p *webhookProcessor) Process(ctx context.Context, ev webhook.EventRow) err
 		ID        string `json:"id"`
 		EventType string `json:"event_type"`
 		Resource  struct {
-			ID               string `json:"id"`
+			ID                string `json:"id"`
 			SupplementaryData struct {
 				RelatedIDs struct {
 					OrderID string `json:"order_id"`
@@ -87,18 +88,37 @@ func (p *webhookProcessor) Process(ctx context.Context, ev webhook.EventRow) err
 	}
 
 	// Find matching cases for this payment and mark them for re-investigation.
-	_, err = p.db.Exec(ctx, `
+	rows, err := p.db.Query(ctx, `
 		UPDATE exception_cases
 		SET status = 'COLLECTING_EVIDENCE', version = version + 1, updated_at = now()
 		WHERE payment_transaction_id = (
 			SELECT id FROM payment_transactions
 			WHERE provider = 'PAYPAL' AND provider_order_id = $1
 		)
-		AND status NOT IN ('RESOLVED', 'REJECTED', 'CLOSED')`,
+		AND status NOT IN ('RESOLVED', 'REJECTED', 'CLOSED')
+		RETURNING id::text`,
 		tx.ProviderOrderID,
 	)
 	if err != nil {
 		return fmt.Errorf("update cases: %w", err)
+	}
+	var affected []string
+	for rows.Next() {
+		var caseID string
+		if err := rows.Scan(&caseID); err != nil {
+			rows.Close()
+			return fmt.Errorf("read affected case: %w", err)
+		}
+		affected = append(affected, caseID)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("read affected cases: %w", err)
+	}
+	if p.web != nil {
+		for _, caseID := range affected {
+			go p.web.ReinvestigateCase(context.WithoutCancel(ctx), caseID)
+		}
 	}
 
 	p.log.Info("webhook event processed", "event", ev.ID, "type", ev.EventType, "capture", payload.Resource.ID)
@@ -178,7 +198,7 @@ func main() {
 	// Real webhook processor: updates payment_transactions from verified events.
 	go (&webhook.Worker{
 		DB:   sqlDB,
-		Proc: &webhookProcessor{db: pool, paypal: paypal, log: logger},
+		Proc: &webhookProcessor{db: pool, paypal: paypal, log: logger, web: web},
 		Wake: wakeCh,
 		Log:  logger,
 	}).Run(context.Background())
@@ -255,6 +275,9 @@ func main() {
 	mux.Handle("GET /internal/v1/telemetry/logs", middleware(http.HandlerFunc(endpoints.LogsByCase)))
 	mux.Handle("GET /internal/v1/telemetry/traces/{trace_id}", middleware(http.HandlerFunc(endpoints.TraceByID)))
 	mux.Handle("GET /internal/v1/telemetry/handler-error-rate", middleware(http.HandlerFunc(endpoints.HandlerErrorRate)))
+
+	mux.Handle("GET /internal/v1/cases/{id}/evidence", middleware(http.HandlerFunc(web.InternalCaseEvidence)))
+	mux.Handle("GET /internal/v1/cases/{id}/webhook-events", middleware(http.HandlerFunc(web.InternalCaseWebhookEvents)))
 
 	policyHandler := &policy.Handler{
 		Client:         opaClient,
