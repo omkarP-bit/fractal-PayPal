@@ -46,25 +46,24 @@ func main() {
 		ON CONFLICT (email) DO NOTHING`)
 
 	must(`INSERT INTO merchants (legal_name, country, integration_base_url, integration_key_ref)
-		VALUES ('Acme Store', 'US', 'http://merchant-store:8090', 'ref:acme:dev-key')
-		ON CONFLICT (id) DO NOTHING`)
+		SELECT 'Acme Store', 'US', 'http://merchant-store:8090', 'ref:acme:dev-key'
+		WHERE NOT EXISTS (SELECT 1 FROM merchants WHERE legal_name = 'Acme Store')`)
 
 	must(`INSERT INTO provider_accounts (merchant_id, provider, environment, external_account_id, credentials_ref, webhook_id)
 		SELECT m.id, 'PAYPAL', 'SANDBOX', 'PAYPAL-MERCHANT-123', 'ref:paypal:sandbox-secret', 'WH-SBX-1'
-		FROM merchants m WHERE m.legal_name = 'Acme Store'
+		FROM (SELECT id FROM merchants WHERE legal_name = 'Acme Store' ORDER BY created_at LIMIT 1) m
 		ON CONFLICT (provider, environment, external_account_id) DO NOTHING`)
 
-	// Link merchant users to the Acme Store merchant
 	must(`INSERT INTO merchant_members (merchant_id, user_id, role, permissions)
 		SELECT m.id, u.id, 'MERCHANT_ADMIN', ARRAY['reconcile','refund']
-		FROM merchants m, users u
-		WHERE m.legal_name = 'Acme Store' AND u.email = 'ops@acme.com'
+		FROM (SELECT id FROM merchants WHERE legal_name = 'Acme Store' ORDER BY created_at LIMIT 1) m, users u
+		WHERE u.email = 'ops@acme.com'
 		ON CONFLICT (merchant_id, user_id) DO NOTHING`)
 
 	must(`INSERT INTO merchant_members (merchant_id, user_id, role, permissions)
 		SELECT m.id, u.id, 'MERCHANT_STAFF', ARRAY['reconcile']
-		FROM merchants m, users u
-		WHERE m.legal_name = 'Acme Store' AND u.email = 'staff@acme.com'
+		FROM (SELECT id FROM merchants WHERE legal_name = 'Acme Store' ORDER BY created_at LIMIT 1) m, users u
+		WHERE u.email = 'staff@acme.com'
 		ON CONFLICT (merchant_id, user_id) DO NOTHING`)
 
 	logger.Info("seed complete", "claim_token_hash", tokenHash)

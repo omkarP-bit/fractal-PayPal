@@ -29,6 +29,7 @@ export const useAuthStore = create<AuthState>()(
       },
       logout: () => {
         localStorage.removeItem('fractal_token');
+        localStorage.removeItem('fractal_auth');
         set({ token: null, user: null, isAuthenticated: false });
       },
       setToken: (token) => {

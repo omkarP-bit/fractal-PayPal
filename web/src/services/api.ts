@@ -74,7 +74,7 @@ class ApiClient {
   }
 
   private getToken(): string | null {
-    return localStorage.getItem('fractal_token');
+    return useAuthStore.getState().token;
   }
 
   private async request<T>(
