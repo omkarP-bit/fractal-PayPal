@@ -30,9 +30,24 @@ var (
 func main() {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
 
-	paypal = NewMPayPal(os.Getenv("MERCHANT_PAYPAL_CLIENT_ID"), os.Getenv("MERCHANT_PAYPAL_CLIENT_SECRET"), os.Getenv("MERCHANT_PAYPAL_BASE_URL"))
-	if paypal == nil || paypal.clientID == "" {
-		paypal = NewMPayPal("sb", "sb", "https://api-m.sandbox.paypal.com")
+	clientID := os.Getenv("PAYPAL_CLIENT_ID")
+	if clientID == "" {
+		clientID = os.Getenv("MERCHANT_PAYPAL_CLIENT_ID")
+	}
+	clientSecret := os.Getenv("PAYPAL_CLIENT_SECRET")
+	if clientSecret == "" {
+		clientSecret = os.Getenv("MERCHANT_PAYPAL_CLIENT_SECRET")
+	}
+	baseURL := os.Getenv("PAYPAL_BASE_URL")
+	if baseURL == "" {
+		baseURL = os.Getenv("MERCHANT_PAYPAL_BASE_URL")
+	}
+	if baseURL == "" {
+		baseURL = "https://api-m.sandbox.paypal.com"
+	}
+	paypal = NewMPayPal(clientID, clientSecret, baseURL)
+	if paypal.clientID == "" || paypal.clientSecret == "" {
+		slog.Error("PayPal credentials are not configured")
 	}
 	fractalURL = os.Getenv("FRACTAL_API_BASE")
 	if fractalURL == "" {

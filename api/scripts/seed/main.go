@@ -50,7 +50,7 @@ func main() {
 		ON CONFLICT (id) DO NOTHING`)
 
 	must(`INSERT INTO provider_accounts (id, merchant_id, provider, environment, external_account_id, credentials_ref, webhook_id)
-		VALUES ('00000000-0000-0000-0000-0000000000c2', '00000000-0000-0000-0000-0000000000c1', 'PAYPAL', 'SANDBOX', 'PAYPAL-MERCHANT-123', 'ref:paypal:sandbox-secret', 'WH-SBX-1')
+		VALUES ('00000000-0000-0000-0000-0000000000c2', '00000000-0000-0000-0000-0000000000c1', 'PAYPAL', 'SANDBOX', 'PAYPAL-MERCHANT-123', 'ref:paypal:sandbox-secret', NULL)
 		ON CONFLICT (provider, environment, external_account_id) DO NOTHING`)
 
 	must(`INSERT INTO merchant_members (merchant_id, user_id, role, permissions)
