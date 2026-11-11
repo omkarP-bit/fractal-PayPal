@@ -15,9 +15,9 @@ type Input struct {
 }
 
 type Output struct {
-	Severity     string    // LOW, MEDIUM, HIGH, CRITICAL
-	AnomalyScore *float64
-	ReasonCodes  []string
+	Severity     string   `json:"severity"`      // LOW, MEDIUM, HIGH, CRITICAL
+	AnomalyScore *float64 `json:"anomaly_score"` // null when disabled/unscored (Phase 11)
+	ReasonCodes  []string `json:"reason_codes"`
 }
 
 // Derive derives operational risk from verified facts only. Anomaly score

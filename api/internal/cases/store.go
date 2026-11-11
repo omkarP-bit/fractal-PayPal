@@ -2,7 +2,10 @@ package cases
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -17,15 +20,40 @@ type Store struct {
 func NewStore(db *pgxpool.Pool) *Store { return &Store{db: db} }
 
 type Case struct {
-	ID              string
-	CaseNumber      string
-	MerchantID      string
-	CustomerID      string
+	ID               string
+	CaseNumber       string
+	MerchantID       string
+	CustomerID       string
 	MerchantOrderRef string
-	CaseType        string
-	Status          string
-	Version         int
+	CaseType         string
+	Status           string
+	Version          int
+	// Anomaly is Phase 11 admin-only context. It is populated only for admin
+	// callers on GET while the model is enabled; nil serializes as omitted,
+	// so non-admin responses are unchanged from Phase 10.
+	Anomaly *AnomalyInfo `json:"anomaly,omitempty"`
 }
+
+// AnomalyInfo is the admin-only anomaly score attached to a case view.
+type AnomalyInfo struct {
+	Score        float64 `json:"score"`
+	ModelID      string  `json:"model_id"`
+	ModelVersion string  `json:"model_version,omitempty"`
+	WindowStart  string  `json:"window_start,omitempty"`
+	WindowEnd    string  `json:"window_end,omitempty"`
+	CalculatedAt string  `json:"calculated_at"`
+	// Threshold mirrors policies/data.rego config.anomaly_approval_threshold
+	// (display only; decisions read the Rego config). Scores at or above it
+	// may escalate to REQUIRE_APPROVAL (RSK-002) — tighten-only, never a
+	// path around BLOCK.
+	Threshold float64             `json:"threshold"`
+	Features  map[string]*float64 `json:"features,omitempty"`
+}
+
+// anomalyApprovalThreshold mirrors policies/data.rego
+// config.anomaly_approval_threshold (0.8). Single source of truth for
+// decisions stays in the Rego config; this copy is for operator display.
+const anomalyApprovalThreshold = 0.8
 
 // isParty returns true if the caller is the customer or a member of the case's merchant.
 func (s *Store) isParty(ctx context.Context, caseID, callerKind, callerID, callerMerchantID string) (bool, error) {
@@ -68,6 +96,72 @@ func (s *Store) GetCase(ctx context.Context, caseID string, claims *auth.Claims)
 		return nil, false, err
 	}
 	return &c, true, nil
+}
+
+// LatestAnomalyScore returns the merchant's most recent anomaly score,
+// preferring one recorded against this case, then any merchant-level score.
+// Returns (nil, nil) when no score exists. Every query is scoped to
+// merchantID, so another tenant's scores can never be read.
+func (s *Store) LatestAnomalyScore(ctx context.Context, caseID, merchantID string) (*AnomalyInfo, error) {
+	read := func(where string, args ...any) (*AnomalyInfo, error) {
+		var (
+			score    float64
+			modelID  string
+			features []byte
+			created  time.Time
+		)
+		err := s.db.QueryRow(ctx, `
+			SELECT score, model_id, features, created_at
+			FROM anomaly_scores
+			WHERE merchant_id = $1 AND `+where+`
+			ORDER BY created_at DESC
+			LIMIT 1`, args...).
+			Scan(&score, &modelID, &features, &created)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil
+		}
+		if err != nil {
+			return nil, err
+		}
+		return buildAnomalyInfo(score, modelID, features, created)
+	}
+
+	if caseID != "" {
+		info, err := read("case_id = $2::uuid", merchantID, caseID)
+		if err != nil || info != nil {
+			return info, err
+		}
+	}
+	return read("case_id IS NULL", merchantID)
+}
+
+// buildAnomalyInfo decodes the traceability payload stored in
+// anomaly_scores.features (model version, window, feature values) written by
+// scripts/anomaly. Missing/legacy payloads degrade to score + model only.
+func buildAnomalyInfo(score float64, modelID string, features []byte, created time.Time) (*AnomalyInfo, error) {
+	info := &AnomalyInfo{
+		Score:        score,
+		ModelID:      modelID,
+		CalculatedAt: created.UTC().Format(time.RFC3339),
+		Threshold:    anomalyApprovalThreshold,
+	}
+	if len(features) == 0 {
+		return info, nil
+	}
+	var payload struct {
+		ModelVersion string              `json:"model_version"`
+		WindowStart  string              `json:"window_start"`
+		WindowEnd    string              `json:"window_end"`
+		Values       map[string]*float64 `json:"values"`
+	}
+	if err := json.Unmarshal(features, &payload); err != nil {
+		return nil, fmt.Errorf("parse anomaly features jsonb: %w", err)
+	}
+	info.ModelVersion = payload.ModelVersion
+	info.WindowStart = payload.WindowStart
+	info.WindowEnd = payload.WindowEnd
+	info.Features = payload.Values
+	return info, nil
 }
 
 func (s *Store) ListCases(ctx context.Context, claims *auth.Claims) ([]Case, error) {
