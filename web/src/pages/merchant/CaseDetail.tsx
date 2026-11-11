@@ -1,385 +1,822 @@
-import { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, ShieldCheck, Lock, FileText, AlertCircle, CreditCard, Clock, BarChart3 } from '../../components/ui/Icons';
-import { apiClient, CustomerCaseView } from '../../services/api';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Link, useNavigate, useParams } from 'react-router-dom';
+import {
+  ArrowLeft,
+  Check,
+  Hash,
+  History,
+  Link2,
+  MoreHorizontal,
+  RefreshCw,
+  ShieldCheck,
+  Sparkles,
+  X,
+} from 'lucide-react';
+import { toast } from 'sonner';
+import { apiClient, type CaseDetail } from '../../services/api';
 import { useAuthStore } from '../../store/auth';
 import { useSSE } from '../../hooks/useSSE';
-import { Badge } from '../../components/ui/Badge';
-import { Button } from '../../components/ui/Button';
+import { cn } from '../../lib/cn';
+import {
+  anomalyMeta,
+  apiErrorMessage,
+  formatAbsolute,
+  formatActor,
+  formatCategory,
+  formatDecision,
+  formatEventType,
+  formatMinorUnits,
+  formatRisk,
+  formatTime,
+  formatValidation,
+  isCustomerVisible,
+  sentenceCase,
+  statusMeta,
+} from '../../lib/format';
+import { Button, IconButton } from '../../components/ui/Button';
+import { StatusPill, Tag } from '../../components/ui/StatusPill';
+import { CopyChip } from '../../components/ui/CopyChip';
+import { Tooltip } from '../../components/ui/Tooltip';
+import { Disclosure } from '../../components/ui/Disclosure';
+import { ConfirmDialog } from '../../components/ui/Dialog';
+import { ErrorNotice, Skeleton } from '../../components/ui/States';
+import { Timeline, type TimelineEntry } from '../../components/ui/Timeline';
+import { Conversation } from '../../components/Conversation';
 
-interface MerchantCaseView extends CustomerCaseView {
-  provider: { name: string; order_id: string; capture_id: string; fetched_at: string };
-  investigation?: {
-    category: string;
-    root_cause_hypothesis: string;
-    evidence_ids: string[];
-    suggested_severity: string;
-    validation_status: string;
-  } | null;
-  latest_decision?: { id: string; outcome: string; policy_revision: string; findings: any[] } | null;
-  activity?: { id: number; actor_type: string; event_type: string; visibility: string; data: any; created_at: string }[];
-  available_actions: string[];
-  pending_approvals: any[];
-  version: number;
-  updated_at: string;
-  // Phase 11: admin-only. Present only for platform/merchant admins while
-  // FRACTAL_ANOMALY_ENABLED=true; absent otherwise (never for customers or
-  // staff).
-  anomaly?: {
-    score: number;
-    model_id: string;
-    model_version?: string;
-    window_start?: string;
-    window_end?: string;
-    calculated_at: string;
-    threshold: number;
-    features?: Record<string, number | null>;
-  };
+const PANEL = 'rounded-lg border border-line bg-surface';
+
+function PermissionsCard() {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (event: MouseEvent) => {
+      if (ref.current && !ref.current.contains(event.target as Node)) setOpen(false);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('mousedown', onPointerDown);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', onPointerDown);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [open]);
+
+  return (
+    <section ref={ref} className={cn(PANEL, 'relative p-4')}>
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <h2 className="text-body font-semibold text-ink">Your access</h2>
+          <p className="mt-0.5 text-meta text-muted">Admin access</p>
+        </div>
+        <Button
+          variant="tertiary"
+          size="sm"
+          onClick={() => setOpen((value) => !value)}
+          aria-expanded={open}
+        >
+          View permissions
+        </Button>
+      </div>
+      {open && (
+        <div className="absolute right-4 top-full z-30 mt-1 w-72 animate-slide-up rounded-lg border border-line bg-surface p-4 shadow-pop">
+          <p className="text-[11px] font-semibold text-success">Can</p>
+          <ul className="mt-2 space-y-1.5">
+            {[
+              'Reconcile orders',
+              'Approve requests from other admins',
+              'See the risk score for this case',
+            ].map((item) => (
+              <li key={item} className="flex items-start gap-2 text-meta text-ink">
+                <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-success" aria-hidden="true" />
+                {item}
+              </li>
+            ))}
+          </ul>
+          <p className="mt-4 text-[11px] font-semibold text-muted">Cannot</p>
+          <ul className="mt-2 space-y-1.5">
+            {['Edit PolicyGuard rules', 'See cases from other merchants'].map((item) => (
+              <li key={item} className="flex items-start gap-2 text-meta text-ink">
+                <X className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted" aria-hidden="true" />
+                {item}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </section>
+  );
 }
 
 export function MerchantCaseDetail() {
   const { id } = useParams();
-  const [caseData, setCaseData] = useState<MerchantCaseView | null>(null);
+  const navigate = useNavigate();
+  const { logout } = useAuthStore();
+  const [caseData, setCaseData] = useState<CaseDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const { logout } = useAuthStore();
-  const navigate = useNavigate();
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [reconciling, setReconciling] = useState(false);
+  const [reconcileError, setReconcileError] = useState<string | null>(null);
+  const [showMerchantOnly, setShowMerchantOnly] = useState(true);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
 
-  const fetchCase = async () => {
-    try {
-      setLoading(true);
-      const data = await apiClient.getCase(id || '');
-      setCaseData(data as MerchantCaseView);
-    } catch (err: any) {
-      setError(err.message || 'Failed to load case');
-      if (err.message.includes('401')) {
-        logout();
-        navigate('/login');
+  const fetchCase = useCallback(
+    async (quiet = false) => {
+      if (!id) return;
+      if (!quiet) setLoading(true);
+      try {
+        const data = await apiClient.getCase(id);
+        setCaseData(data);
+        setError(null);
+      } catch (err) {
+        const raw = err instanceof Error ? err.message : '';
+        setError(apiErrorMessage(err, 'We couldn’t load this case. Try again.'));
+        if (raw.includes('401')) {
+          logout();
+          navigate('/login');
+        }
+      } finally {
+        if (!quiet) setLoading(false);
       }
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleMessageEvent = (event: { type: string; case_id: string; version: number }) => {
-    fetchCase();
-  };
+    },
+    [id, logout, navigate],
+  );
 
   useEffect(() => {
-    fetchCase();
-  }, [id]);
+    void fetchCase();
+  }, [fetchCase]);
 
-  useSSE(id || '', handleMessageEvent);
+  const onCaseEvent = useCallback(() => {
+    void fetchCase(true);
+  }, [fetchCase]);
 
-  const handleReconcile = async () => {
-    if (!id) return;
+  useSSE(id, onCaseEvent);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onPointerDown = (event: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) setMenuOpen(false);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setMenuOpen(false);
+    };
+    document.addEventListener('mousedown', onPointerDown);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', onPointerDown);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [menuOpen]);
+
+  const copyText = async (value: string, confirmation: string) => {
     try {
-      await apiClient.proposeAction(id, {
-        action_type: 'RECONCILE_MERCHANT_ORDER',
-        params: { amount_minor: caseData!.payment.amount_minor, currency: caseData!.payment.currency },
-      });
-      fetchCase();
-    } catch (err: any) {
-      setError(err.message || 'Failed to reconcile');
+      await navigator.clipboard.writeText(value);
+      toast.success(confirmation);
+    } catch {
+      toast.error('We could not copy that. Try selecting it instead.');
     }
+    setMenuOpen(false);
+  };
+
+  const performReconcile = async () => {
+    if (!id || !caseData) return;
+    setReconciling(true);
+    setReconcileError(null);
+    try {
+      const response = await apiClient.proposeAction(id, {
+        action_type: 'RECONCILE_MERCHANT_ORDER',
+        params: {
+          amount_minor: caseData.payment?.amount_minor ?? 0,
+          currency: caseData.payment?.currency ?? 'USD',
+        },
+      });
+      setConfirmOpen(false);
+      await fetchCase(true);
+
+      const decision = response.decision;
+      if (decision.outcome === 'ALLOW') {
+        toast.success('Order reconciled', {
+          description: 'PolicyGuard approved the change and your order is up to date.',
+        });
+      } else if (decision.outcome === 'REQUIRE_APPROVAL') {
+        toast.warning('Approval needed', {
+          description: 'PolicyGuard needs another admin to approve this change.',
+        });
+      } else if (decision.outcome === 'WAIT') {
+        toast.info('Waiting on more evidence', {
+          description: 'PolicyGuard will review this case again when new evidence arrives.',
+        });
+      } else {
+        toast.error('Reconcile blocked', {
+          description: 'PolicyGuard did not allow this change. The case is unchanged.',
+        });
+      }
+    } catch (err) {
+      setConfirmOpen(false);
+      setReconcileError(apiErrorMessage(err, 'The reconcile request failed. Try again.'));
+    } finally {
+      setReconciling(false);
+    }
+  };
+
+  const sendMessage = async (body: string) => {
+    if (!id) return;
+    await apiClient.createCaseMessage(id, body, 'SHARED');
+    await fetchCase(true);
   };
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="flex flex-col items-center gap-3">
-          <div className="w-8 h-8 border-4 border-paypal-600 border-t-transparent rounded-full animate-spin" />
-          <p className="text-gray-500 text-sm">Loading case...</p>
+      <div className="space-y-5">
+        <Skeleton className="h-4 w-24" />
+        <div className="flex items-end justify-between gap-4">
+          <div className="space-y-2">
+            <Skeleton className="h-8 w-48" />
+            <Skeleton className="h-4 w-64" />
+          </div>
+          <Skeleton className="h-10 w-40 rounded-pill" />
+        </div>
+        <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
+          <div className="space-y-5">
+            <Skeleton className="h-64 w-full rounded-lg" />
+            <Skeleton className="h-56 w-full rounded-lg" />
+            <Skeleton className="h-40 w-full rounded-lg" />
+          </div>
+          <div className="space-y-5">
+            <Skeleton className="h-80 w-full rounded-lg" />
+            <Skeleton className="h-24 w-full rounded-lg" />
+          </div>
         </div>
       </div>
     );
   }
 
-  if (error) {
+  if (!caseData) {
     return (
-      <div className="flex flex-col items-center justify-center h-64 text-center">
-        <div className="w-12 h-12 rounded-full bg-red-50 flex items-center justify-center">
-          <AlertCircle className="w-6 h-6 text-red-500" />
-        </div>
-        <h3 className="text-lg font-medium text-gray-900 mt-4">Error loading case</h3>
-        <p className="text-sm text-gray-600">{error}</p>
-        <button
-          onClick={() => navigate('/merchant/cases')}
-          className="mt-4 btn-primary px-6 py-2"
+      <div className="space-y-5">
+        <Link
+          to="/merchant/cases"
+          className="inline-flex items-center gap-1.5 text-meta font-medium text-blue hover:underline"
         >
-          Back to Cases
-        </button>
+          <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+          Back to cases
+        </Link>
+        <ErrorNotice
+          title="We couldn’t load this case"
+          description={error || 'The case may have been removed.'}
+          onRetry={() => void fetchCase()}
+        />
       </div>
     );
   }
+
+  const payment = caseData.payment;
+  const order = caseData.order;
+  const provider = caseData.provider;
+  const decision = caseData.latest_decision;
+  const investigation = caseData.investigation;
+  const evidence = caseData.evidence ?? [];
+  const customerName = caseData.customer?.name || caseData.customer?.email || 'Customer';
+
+  const paymentPaid = ['COMPLETED', 'CAPTURED', 'PAID'].includes(
+    (payment?.status ?? '').toUpperCase(),
+  );
+  const orderPaid = ['PAID', 'COMPLETED', 'FULFILLED', 'RECONCILED'].includes(
+    (order?.status ?? '').toUpperCase(),
+  );
+  const statusesDiffer = Boolean(payment && order) && paymentPaid !== orderPaid;
+  const amountsDiffer = Boolean(
+    payment && order && order.amount_minor > 0 && payment.amount_minor !== order.amount_minor,
+  );
+  const currenciesDiffer = Boolean(
+    payment && order && order.currency && payment.currency !== order.currency,
+  );
+  const inSync = !statusesDiffer && !amountsDiffer && !currenciesDiffer;
+
+  const alreadyResolved = ['RESOLVED', 'CLOSED', 'REJECTED'].includes(
+    caseData.status.toUpperCase(),
+  );
+  const canReconcile =
+    caseData.available_actions.includes('RECONCILE_MERCHANT_ORDER') && !alreadyResolved;
+  const disabledReason = alreadyResolved
+    ? 'This case is already resolved.'
+    : 'Reconciling isn’t available for this case.';
+
+  const evidenceCount = evidence.length || investigation?.evidence_ids.length || 0;
+  const validation = formatValidation(investigation?.validation_status);
+  const decisionMeta = formatDecision(decision?.outcome);
+  const matchedFinding = decision?.findings?.find((finding) => finding.passed) ?? decision?.findings?.[0];
+  const decisionReason =
+    matchedFinding?.message ||
+    (decision
+      ? `PolicyGuard ${decisionMeta.label.toLowerCase()} this action under ${decision.policy_revision}.`
+      : '');
+
+  const timelineEntries: TimelineEntry[] =
+    caseData.activity?.map((item) => ({
+      id: item.id,
+      time: item.created_at,
+      title: formatEventType(item.event_type),
+      actor: formatActor(item.actor_type),
+      customerVisible: isCustomerVisible(item.visibility),
+      detail:
+        item.data && typeof item.data.message === 'string' ? item.data.message : undefined,
+    })) ?? [];
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => navigate('/merchant/cases')}
-            className="p-2 rounded-md text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
-          >
-            <ArrowLeft className="w-4 h-4" />
-          </button>
-          <div>
-            <h1 className="text-xl font-bold text-gray-900">Case {caseData.case_number}</h1>
-            <p className="text-sm text-gray-500">{caseData.status.replace('_', ' ')}</p>
+    <div className="space-y-5">
+      <div className="sticky top-16 z-30 -mx-4 -mt-6 border-b border-line bg-bg px-4 py-3 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
+        <Link
+          to="/merchant/cases"
+          className="inline-flex items-center gap-1.5 text-meta font-medium text-blue hover:underline"
+        >
+          <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+          Back to cases
+        </Link>
+        <div className="mt-2 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2.5">
+              <h1 className="text-title font-semibold text-ink">Case {caseData.case_number}</h1>
+              <span key={caseData.status} className="animate-fade-in" aria-live="polite">
+                <StatusPill meta={statusMeta(caseData.status)} />
+              </span>
+            </div>
+            <p className="mt-0.5 text-meta text-muted">
+              Opened{' '}
+              <Tooltip content={formatAbsolute(caseData.created_at)}>
+                <time dateTime={caseData.created_at}>{formatTime(caseData.created_at)}</time>
+              </Tooltip>{' '}
+              for {customerName}
+            </p>
+          </div>
+
+          <div className="flex shrink-0 items-center gap-2">
+            {canReconcile ? (
+              <Button
+                variant="primary"
+                onClick={() => {
+                  setReconcileError(null);
+                  setConfirmOpen(true);
+                }}
+                isLoading={reconciling}
+                loadingText="Reconciling…"
+                icon={<RefreshCw className="h-4 w-4" aria-hidden="true" strokeWidth={1.75} />}
+              >
+                Reconcile order
+              </Button>
+            ) : (
+              <Tooltip content={disabledReason} side="bottom">
+                <span className="inline-flex">
+                  <Button
+                    variant="primary"
+                    disabled
+                    icon={<RefreshCw className="h-4 w-4" aria-hidden="true" strokeWidth={1.75} />}
+                  >
+                    Reconcile order
+                  </Button>
+                </span>
+              </Tooltip>
+            )}
+
+            <div className="relative" ref={menuRef}>
+              <IconButton
+                label="More case actions"
+                variant="outline"
+                onClick={() => setMenuOpen((value) => !value)}
+                aria-haspopup="menu"
+                aria-expanded={menuOpen}
+              >
+                <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
+              </IconButton>
+              {menuOpen && (
+                <div
+                  role="menu"
+                  className="absolute right-0 top-full z-50 mt-1 w-56 animate-slide-up rounded-lg border border-line bg-surface p-1.5 shadow-pop"
+                >
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => void copyText(window.location.href, 'Case link copied')}
+                    className="flex w-full items-center gap-2 rounded-sm px-3 py-2 text-left text-body text-ink transition-colors hover:bg-surface-muted"
+                  >
+                    <Link2 className="h-4 w-4 text-muted" aria-hidden="true" strokeWidth={1.75} />
+                    Copy case link
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => void copyText(caseData.id, 'Case ID copied')}
+                    className="flex w-full items-center gap-2 rounded-sm px-3 py-2 text-left text-body text-ink transition-colors hover:bg-surface-muted"
+                  >
+                    <Hash className="h-4 w-4 text-muted" aria-hidden="true" strokeWidth={1.75} />
+                    Copy case ID
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
-        <span className={`badge badge-investigating`}>
-          {caseData.status.replace('_', ' ')}
-        </span>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 space-y-6">
-          <div className="bg-white dark:bg-gray-800 border border-gray-200 rounded-lg shadow-sm p-6">
-            <div className="flex items-center gap-2 mb-4">
-              <CreditCard className="w-4 h-4 text-gray-500" />
-              <h3 className="font-medium text-gray-900">Shared State</h3>
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
+        <div className="min-w-0 space-y-5">
+          {/* Payment vs order */}
+          <section className={cn(PANEL, 'p-6')}>
+            <div className="mb-4 flex justify-center">
+              <StatusPill
+                meta={{
+                  label: inSync ? 'In sync' : 'Out of sync',
+                  tone: inSync ? 'success' : 'warning',
+                }}
+              />
             </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
-                <p className="text-xs font-medium text-gray-500 uppercase">Provider Order</p>
-                <div className="text-sm font-medium text-gray-900">{caseData.provider.order_id}</div>
-                <div className="text-xs text-gray-500 mt-1">Capture: {caseData.provider.capture_id}</div>
-                <div className="flex items-center gap-2 mt-2">
-                  <span className={`badge ${caseData.payment.status === 'COMPLETED' ? 'badge-resolved' : 'badge-pending'}`}>
-                    {caseData.payment.status}
-                  </span>
-                  <span className="text-xs text-gray-500">{caseData.provider.fetched_at.slice(11, 19)}</span>
-                </div>
-                <div className="flex items-baseline gap-1 mt-2">
-                  <span className="text-lg font-bold text-gray-900">${(caseData.payment.amount_minor / 100).toFixed(2)}</span>
-                  <span className="text-sm font-medium text-gray-500">{caseData.payment.currency}</span>
-                </div>
-              </div>
-              <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
-                <p className="text-xs font-medium text-gray-500 uppercase">Merchant Order</p>
-                <div className="text-lg font-bold text-gray-900 mt-1">{caseData.order.ref}</div>
-                <div className="flex items-center gap-2 mt-2">
-                  <span className={`badge badge-pending ${caseData.order.status === 'PAYMENT_PENDING' ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-green-50 text-green-700 border-green-200'}`}>
-                    {caseData.order.status}
-                  </span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white dark:bg-gray-800 border border-gray-200 rounded-lg shadow-sm p-6">
-            <div className="flex items-center gap-2 mb-4">
-              <ShieldCheck className="w-4 h-4 text-blue-500" />
-              <h3 className="font-medium text-gray-900">AI Investigation (Advisory)</h3>
-            </div>
-            <div className="space-y-3">
-              {caseData.investigation ? (
-                <>
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <p className="text-xs font-medium text-gray-500 uppercase">Category</p>
-                      <div className="text-sm font-medium text-gray-900">{caseData.investigation.category}</div>
-                    </div>
-                    <span className={`badge badge-${caseData.investigation.suggested_severity.toLowerCase()}`}>
-                      {caseData.investigation.suggested_severity}
-                    </span>
-                  </div>
-                  <div className="bg-gray-50 rounded-lg p-3 border border-gray-200">
-                    <p className="text-sm text-gray-800 dark:text-gray-700">{caseData.investigation.root_cause_hypothesis}</p>
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      {caseData.investigation.evidence_ids.map((id) => (
-                        <span key={id} className="text-xs bg-blue-50 text-blue-700 px-2 py-1 rounded border border-blue-200">
-                          {id}
-                        </span>
-                      ))}
-                      <span className="text-xs text-gray-500 italic">(verified)</span>
-                    </div>
-                  </div>
-                </>
-              ) : (
-                <p className="text-sm text-gray-600">
-                  No AI investigation has been recorded for this case. Facts are still verified by the backend and governed by PolicyGuard.
+            <div className="grid gap-6 sm:grid-cols-2 sm:gap-0">
+              <div className="sm:pr-6">
+                <p className="text-meta text-muted">PayPal</p>
+                <p className="mt-1 text-hero font-semibold tabular-nums text-ink">
+                  {payment ? formatMinorUnits(payment.amount_minor, payment.currency) : '—'}
                 </p>
-              )}
-            </div>
-          </div>
+                <div className="mt-2">
+                  <StatusPill meta={statusMeta(payment?.status)} />
+                </div>
 
-          <div className="bg-white dark:bg-gray-800 border border-gray-200 rounded-lg shadow-sm p-6">
-            <div className="flex items-center gap-2 mb-4">
-              <Lock className="w-4 h-4 text-green-500" />
-              <h3 className="font-medium text-gray-900">PolicyGuard Decision</h3>
-            </div>
-            <div className="space-y-2">
-              {caseData.latest_decision ? (
-                <>
+                <dl className="mt-4 space-y-2.5 border-t border-line pt-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <dt className="text-meta text-muted">Provider order</dt>
+                    <dd>
+                      {provider?.order_id ? (
+                        <CopyChip value={provider.order_id} title="Copy provider order ID" />
+                      ) : (
+                        <span className="text-meta text-muted">—</span>
+                      )}
+                    </dd>
+                  </div>
+                  <div className="flex items-center justify-between gap-3">
+                    <dt className="text-meta text-muted">Capture</dt>
+                    <dd>
+                      {provider?.capture_id ? (
+                        <CopyChip value={provider.capture_id} title="Copy capture ID" />
+                      ) : (
+                        <span className="text-meta text-muted">—</span>
+                      )}
+                    </dd>
+                  </div>
+                  <div className="flex items-center justify-between gap-3">
+                    <dt className="text-meta text-muted">Captured</dt>
+                    <dd className="text-meta text-ink">
+                      {provider?.fetched_at ? formatAbsolute(provider.fetched_at) : '—'}
+                    </dd>
+                  </div>
+                </dl>
+              </div>
+
+              <div className="border-t border-line pt-6 sm:border-l sm:border-t-0 sm:pl-6 sm:pt-0">
+                <p className="text-meta text-muted">Your store</p>
+                <p className="mt-1 break-all font-mono text-[18px] font-semibold text-ink sm:text-[20px]">
+                  {order?.ref ?? '—'}
+                </p>
+                <div
+                  className={cn(
+                    'mt-2 w-fit rounded-sm',
+                    statusesDiffer && 'bg-warning-bg px-2 py-1',
+                  )}
+                >
+                  <StatusPill meta={statusMeta(order?.status)} />
+                </div>
+
+                <dl className="mt-4 space-y-2.5 border-t border-line pt-3">
                   <div
-                    className={`flex items-center gap-4 py-4 rounded-lg border ${
-                      caseData.latest_decision.outcome === 'ALLOW'
-                        ? 'bg-green-50 border-green-200'
-                        : caseData.latest_decision.outcome === 'BLOCK'
-                          ? 'bg-red-50 border-red-200'
-                          : 'bg-amber-50 border-amber-200'
-                    }`}
+                    className={cn(
+                      'flex items-center justify-between gap-3 rounded-sm',
+                      amountsDiffer && 'bg-warning-bg px-2 py-1',
+                    )}
                   >
-                    <div className="flex items-center gap-2">
-                      <span
-                        className={`w-2 h-2 rounded-full ${
-                          caseData.latest_decision.outcome === 'ALLOW'
-                            ? 'bg-green-500'
-                            : caseData.latest_decision.outcome === 'BLOCK'
-                              ? 'bg-red-500'
-                              : 'bg-amber-500'
-                        }`}
-                      />
-                      <span
-                        className={`font-bold text-sm ${
-                          caseData.latest_decision.outcome === 'ALLOW'
-                            ? 'text-green-700'
-                            : caseData.latest_decision.outcome === 'BLOCK'
-                              ? 'text-red-700'
-                              : 'text-amber-700'
-                        }`}
-                      >
-                        [ {caseData.latest_decision.outcome.replace('_', ' ')} ]
-                      </span>
-                    </div>
-                    <div className="text-sm text-gray-900">
-                      rev {caseData.latest_decision.policy_revision}
-                    </div>
+                    <dt className="text-meta text-muted">Order total</dt>
+                    <dd className="text-meta font-medium tabular-nums text-ink">
+                      {order && order.amount_minor > 0
+                        ? formatMinorUnits(order.amount_minor, order.currency)
+                        : '—'}
+                    </dd>
                   </div>
-                  {caseData.latest_decision.findings.map((f: any, idx: number) => (
-                    <div key={idx} className="flex items-start gap-2 text-sm">
-                      <span className="text-xs font-medium text-gray-600">{f.result ?? 'PASS'}</span>
-                      <div className="text-sm text-gray-700">{f.rule_id} {f.code}</div>
-                      <div className="text-xs text-gray-500 mt-0.5">{f.message}</div>
-                    </div>
-                  ))}
-                </>
-              ) : (
-                <p className="text-sm text-gray-600">
-                  No policy decision yet. Run Reconcile to evaluate this case against PolicyGuard.
+                  <div className="flex items-center justify-between gap-3">
+                    <dt className="text-meta text-muted">Last updated</dt>
+                    <dd className="text-meta text-ink">
+                      {order?.fetched_at ? (
+                        <Tooltip content={formatAbsolute(order.fetched_at)} side="left">
+                          <time dateTime={order.fetched_at}>{formatTime(order.fetched_at)}</time>
+                        </Tooltip>
+                      ) : (
+                        '—'
+                      )}
+                    </dd>
+                  </div>
+                </dl>
+              </div>
+            </div>
+          </section>
+
+          {/* AI investigation */}
+          <section className={cn(PANEL, 'p-6')}>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <Sparkles className="h-4 w-4 text-info" aria-hidden="true" strokeWidth={1.75} />
+                <h2 className="text-section font-semibold text-ink">AI investigation</h2>
+                <Tag tone="neutral">Advisory</Tag>
+              </div>
+              {investigation && <StatusPill meta={formatRisk(investigation.suggested_severity)} />}
+            </div>
+
+            {investigation ? (
+              <div className="mt-4">
+                <p className="text-body font-medium text-ink">
+                  {formatCategory(investigation.category)}
                 </p>
+                <p className="mt-1.5 max-w-prose text-body text-muted">
+                  {investigation.root_cause_hypothesis}
+                </p>
+
+                {evidenceCount > 0 && (
+                  <div className="mt-4 border-t border-line pt-3">
+                    <Disclosure
+                      title="Evidence"
+                      meta={`${evidenceCount} ${evidenceCount === 1 ? 'item' : 'items'}, ${validation.label.toLowerCase()}`}
+                    >
+                      <ul className="space-y-1.5">
+                        {(evidence.length > 0
+                          ? evidence
+                          : (investigation.evidence_ids ?? []).map((evidenceId) => ({
+                              id: evidenceId,
+                              evidence_type: 'evidence',
+                              source_system: '',
+                              source_ref: '',
+                              fetched_at: '',
+                            }))
+                        ).map((item) => (
+                          <li
+                            key={item.id}
+                            className="flex items-center justify-between gap-3 rounded-sm bg-surface-muted px-2.5 py-1.5"
+                          >
+                            <span className="min-w-0 truncate text-meta text-ink">
+                              {sentenceCase(item.evidence_type)}
+                              {item.source_system && (
+                                <span className="ml-1.5 text-[11px] text-muted">
+                                  {sentenceCase(item.source_system)}
+                                </span>
+                              )}
+                            </span>
+                            <CopyChip value={item.id} title="Copy evidence ID" />
+                          </li>
+                        ))}
+                      </ul>
+                    </Disclosure>
+                  </div>
+                )}
+
+                <p className="mt-4 text-[12px] leading-5 text-muted">
+                  AI suggestions are advisory. Reconcile to check this case against your policy.
+                </p>
+              </div>
+            ) : (
+              <p className="mt-4 text-body text-muted">
+                No AI investigation has been recorded for this case yet. You can still reconcile —
+                PolicyGuard checks every action.
+              </p>
+            )}
+          </section>
+
+          {/* PolicyGuard */}
+          <section className={cn(PANEL, 'p-6')}>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <ShieldCheck className="h-4 w-4 text-success" aria-hidden="true" strokeWidth={1.75} />
+                <h2 className="text-section font-semibold text-ink">PolicyGuard decision</h2>
+              </div>
+              {decision && (
+                <span key={decision.id} className="animate-fade-in">
+                  <StatusPill
+                    meta={decisionMeta}
+                    className="h-8 px-3 text-body"
+                  />
+                </span>
               )}
             </div>
-          </div>
 
-          <div className="bg-white dark:bg-gray-800 border border-gray-200 rounded-lg shadow-sm p-6">
-            <div className="flex items-center gap-2 mb-4">
-              <FileText className="w-4 h-4 text-gray-500" />
-              <h3 className="font-medium text-gray-900">Actions</h3>
+            {reconcileError && (
+              <ErrorNotice
+                className="mt-4"
+                title="We couldn’t reconcile this order"
+                description={reconcileError}
+                onRetry={() => void performReconcile()}
+              />
+            )}
+
+            {decision ? (
+              <div className="mt-4">
+                <p className="max-w-prose text-body text-ink">{decisionReason}</p>
+                <dl className="mt-3 flex flex-wrap gap-x-8 gap-y-2 border-t border-line pt-3">
+                  <div>
+                    <dt className="text-[11px] text-muted">Rule</dt>
+                    <dd className="font-mono text-[12px] text-ink">
+                      {matchedFinding?.rule_id || matchedFinding?.code || '—'}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-[11px] text-muted">Policy revision</dt>
+                    <dd className="font-mono text-[12px] text-ink">
+                      {decision.policy_revision || '—'}
+                    </dd>
+                  </div>
+                  {decision.created_at && (
+                    <div>
+                      <dt className="text-[11px] text-muted">Decided</dt>
+                      <dd className="text-[12px] text-ink">
+                        <Tooltip content={formatAbsolute(decision.created_at)} side="left">
+                          <time dateTime={decision.created_at}>
+                            {formatTime(decision.created_at)}
+                          </time>
+                        </Tooltip>
+                      </dd>
+                    </div>
+                  )}
+                </dl>
+
+                {decision.findings?.length > 0 && (
+                  <div className="mt-4 border-t border-line pt-3">
+                    <p className="text-meta font-medium text-ink">Checks</p>
+                    <ul className="mt-2 space-y-1.5">
+                      {decision.findings.map((finding, index) => (
+                        <li
+                          key={`${finding.rule_id ?? finding.code ?? 'check'}-${index}`}
+                          className="flex items-start gap-2 text-meta"
+                        >
+                          {finding.passed === false ? (
+                            <X className="mt-0.5 h-3.5 w-3.5 shrink-0 text-danger" aria-hidden="true" />
+                          ) : (
+                            <Check
+                              className="mt-0.5 h-3.5 w-3.5 shrink-0 text-success"
+                              aria-hidden="true"
+                            />
+                          )}
+                          <span className="min-w-0 flex-1 text-ink">
+                            {finding.message || sentenceCase(finding.code || finding.rule_id || 'Check')}
+                          </span>
+                          {(finding.rule_id || finding.code) && (
+                            <span className="hidden shrink-0 font-mono text-[11px] text-muted sm:inline">
+                              {finding.rule_id || finding.code}
+                            </span>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {(caseData.pending_approvals ?? []).length > 0 && (
+                  <div className="mt-4 rounded-md bg-warning-bg p-3">
+                    <p className="text-meta font-medium text-warning">Approval required</p>
+                    <ul className="mt-1 space-y-1">
+                      {caseData.pending_approvals.map((approval) => (
+                        <li key={approval.id} className="text-meta text-ink">
+                          {sentenceCase(approval.action_type)}
+                          <span className="ml-1.5 text-[11px] text-muted">
+                            expires {formatTime(approval.expires_at)}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                    <p className="mt-1.5 text-[11px] text-muted">
+                      Requests are read-only here. Use your approvals workflow to decide.
+                    </p>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <p className="mt-4 text-body text-muted">
+                No policy decision yet.{' '}
+                {canReconcile ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setReconcileError(null);
+                      setConfirmOpen(true);
+                    }}
+                    className="font-medium text-blue hover:underline"
+                  >
+                    Reconcile to check this case against your policy.
+                  </button>
+                ) : (
+                  'Reconciling is not available for this case.'
+                )}
+              </p>
+            )}
+          </section>
+
+          {/* Conversation */}
+          <section className={cn(PANEL, 'p-6')}>
+            <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+              <h2 className="text-section font-semibold text-ink">Conversation</h2>
+              <p className="text-[12px] text-muted">Messages are shared with the customer.</p>
             </div>
-            <div className="space-y-3">
-              <button
-                onClick={handleReconcile}
-                disabled={!caseData.available_actions.includes('RECONCILE_MERCHANT_ORDER')}
-                className="w-full flex items-center justify-center gap-2 px-4 py-2 border border-gray-200 rounded-lg text-sm text-gray-700 hover:bg-gray-50 transition-colors"
-              >
-                <Clock className="w-4 h-4 text-gray-500" />
-                Reconcile Order
-              </button>
-              <button className="w-full flex items-center justify-center gap-2 px-4 py-2 border border-gray-200 rounded-lg text-sm text-gray-700 hover:bg-gray-50 transition-colors">
-                <ShieldCheck className="w-4 h-4 text-gray-500" />
-                Refund (Approval)
-              </button>
-            </div>
-          </div>
+            <Conversation
+              messages={caseData.messages ?? []}
+              perspective="merchant"
+              onSend={sendMessage}
+              emptyText="No messages yet. Reply to keep the customer informed."
+            />
+          </section>
         </div>
 
-        <div className="lg:col-span-1 space-y-6">
-          <div className="bg-white dark:bg-gray-800 border border-gray-200 rounded-lg shadow-sm p-6">
-            <h3 className="font-medium text-gray-900 mb-4">Audit Timeline</h3>
-            <div className="space-y-3">
-              {(caseData.activity ?? []).length === 0 && (
-                <p className="text-sm text-gray-600">No activity has been recorded yet.</p>
-              )}
-              {(caseData.activity ?? []).map((item) => (
-                <div key={item.id} className="flex items-start gap-3 relative">
-                  <div className={`relative w-2.5 h-2.5 rounded-full ${item.visibility === 'CUSTOMER' ? 'bg-blue-500' : 'bg-gray-400'}`} />
-                  <div className="absolute left-1/2 top-2.5 bottom-2 w-0.5 bg-gray-200" />
-                  <div className="text-xs text-gray-500">{item.created_at.slice(11, 16)}</div>
-                  <div className="text-sm text-gray-700">{item.event_type.replaceAll('_', ' ').toLowerCase()}</div>
-                  <span className={`text-xs ${item.visibility === 'CUSTOMER' ? 'text-blue-600' : 'text-gray-500'} font-medium`}>
-                    [{item.actor_type === 'CUSTOMER' ? 'Customer' : item.actor_type === 'MERCHANT_USER' ? 'Merchant' : 'System'}]
-                  </span>
-                </div>
-              ))}
+        <aside className="min-w-0 space-y-5">
+          <section className={cn(PANEL, 'p-4')}>
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <History className="h-4 w-4 text-muted" aria-hidden="true" strokeWidth={1.75} />
+                <h2 className="text-body font-semibold text-ink">Activity</h2>
+              </div>
+              <label className="flex cursor-pointer items-center gap-1.5 text-[11px] text-muted">
+                <input
+                  type="checkbox"
+                  checked={showMerchantOnly}
+                  onChange={(event) => setShowMerchantOnly(event.target.checked)}
+                  className="h-3.5 w-3.5 accent-blue"
+                />
+                Show merchant-only
+              </label>
             </div>
-            <div className="text-xs text-gray-500 mt-3">
-              [C] Customer-visible &nbsp; [M] Merchant-only
+            <div className="mt-4">
+              <Timeline
+                entries={timelineEntries}
+                showMerchantOnly={showMerchantOnly}
+                emptyText="No activity has been recorded yet."
+              />
             </div>
-          </div>
+          </section>
+
+          <PermissionsCard />
 
           {caseData.anomaly && (
-            <div className="bg-white dark:bg-gray-800 border border-gray-200 rounded-lg shadow-sm p-6">
-              <div className="flex items-center gap-2 mb-4">
-                <BarChart3 className="w-4 h-4 text-indigo-500" />
-                <h3 className="font-medium text-gray-900">Operational Anomaly (Admin)</h3>
+            <section className={cn(PANEL, 'p-4')}>
+              <div className="flex items-center justify-between gap-3">
+                <h2 className="text-body font-semibold text-ink">Operational anomaly</h2>
+                <StatusPill
+                  meta={anomalyMeta(caseData.anomaly.score, caseData.anomaly.threshold)}
+                  size="sm"
+                />
               </div>
-              <div className="flex items-center gap-3 mb-3">
-                <span className="text-2xl font-bold text-gray-900">{caseData.anomaly.score.toFixed(2)}</span>
-                <span
-                  className={`px-2 py-0.5 rounded-full text-xs font-medium border ${
-                    caseData.anomaly.score >= caseData.anomaly.threshold
-                      ? 'bg-amber-50 text-amber-700 border-amber-200'
-                      : 'bg-green-50 text-green-700 border-green-200'
-                  }`}
-                >
-                  {caseData.anomaly.score >= caseData.anomaly.threshold ? 'Elevated' : 'Normal'}
-                </span>
-              </div>
-              <div className="space-y-1 text-sm text-gray-600 mb-3">
+              <p className="mt-3 text-hero font-semibold tabular-nums text-ink">
+                {caseData.anomaly.score.toFixed(2)}
+              </p>
+              <p className="text-[11px] text-muted">
+                Threshold {caseData.anomaly.threshold.toFixed(2)}
+              </p>
+              <dl className="mt-3 space-y-1.5 border-t border-line pt-3 text-meta">
                 {caseData.anomaly.features?.webhook_retry_count != null && (
-                  <div>
-                    Webhook retry signals:{' '}
-                    <span className="font-medium text-gray-900">{caseData.anomaly.features.webhook_retry_count}</span>{' '}
-                    in window
+                  <div className="flex items-center justify-between gap-3">
+                    <dt className="text-muted">Webhook retries</dt>
+                    <dd className="tabular-nums text-ink">
+                      {caseData.anomaly.features.webhook_retry_count}
+                    </dd>
                   </div>
                 )}
                 {caseData.anomaly.features?.handler_error_rate != null && (
-                  <div>
-                    Handler error rate:{' '}
-                    <span className="font-medium text-gray-900">
+                  <div className="flex items-center justify-between gap-3">
+                    <dt className="text-muted">Handler error rate</dt>
+                    <dd className="tabular-nums text-ink">
                       {(caseData.anomaly.features.handler_error_rate * 100).toFixed(1)}%
-                    </span>
+                    </dd>
                   </div>
                 )}
-                <div>
-                  Window: {caseData.anomaly.window_start?.slice(0, 16).replace('T', ' ')} →{' '}
-                  {caseData.anomaly.window_end?.slice(0, 16).replace('T', ' ')} UTC
-                </div>
-              </div>
-              <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-3 text-xs text-gray-600 dark:text-gray-300">
-                <p className="mb-1">
-                  <span className="font-medium">Tighten-only:</span> at or above {caseData.anomaly.threshold} this score
-                  can require admin approval — it can never allow a blocked action. With the model disabled the score is
-                  null and decisions are unchanged.
-                </p>
-                <p>
-                  Model {caseData.anomaly.model_id}
-                  {caseData.anomaly.model_version ? ` (${caseData.anomaly.model_version})` : ''} · scored{' '}
-                  {caseData.anomaly.calculated_at.slice(0, 16).replace('T', ' ')} UTC · evaluated on synthetic data
-                  (model card: investigator/app/anomaly/README.md)
-                </p>
-              </div>
-            </div>
+              </dl>
+              <p className="mt-3 text-[11px] leading-5 text-muted">
+                An elevated score can require admin approval. It can never allow a blocked action.
+                Model {caseData.anomaly.model_id}
+                {caseData.anomaly.model_version ? ` (${caseData.anomaly.model_version})` : ''}.
+              </p>
+            </section>
           )}
-
-          <div className="bg-white dark:bg-gray-800 border border-gray-200 rounded-lg shadow-sm p-6">
-            <h3 className="font-medium text-gray-900 mb-4">Your Access (Admin)</h3>
-            <div className="space-y-3">
-              <div className="flex items-center gap-2 p-2 rounded-lg bg-green-50 border border-green-100">
-                <span className="text-xs text-green-600 font-medium">Can:</span>
-                <span className="text-sm text-gray-700">Reconcile, approve others' requests, see risk score</span>
-              </div>
-              <div className="flex items-center gap-2 p-2 rounded-lg bg-gray-50 border border-gray-200">
-                <span className="text-xs text-gray-500 font-medium">Cannot:</span>
-                <span className="text-sm text-gray-600">Edit policy, see other merchants</span>
-              </div>
-            </div>
-          </div>
-        </div>
+        </aside>
       </div>
+
+      <ConfirmDialog
+        open={confirmOpen}
+        onClose={() => setConfirmOpen(false)}
+        onConfirm={() => void performReconcile()}
+        title="Reconcile this order?"
+        description={
+          <>
+            PolicyGuard will check this change against your policy. If approved, order{' '}
+            <span className="font-mono text-ink">{order?.ref ?? '—'}</span> will be marked as paid
+            for <span className="font-medium text-ink">{payment ? formatMinorUnits(payment.amount_minor, payment.currency) : '—'}</span>.
+          </>
+        }
+        confirmLabel="Confirm reconcile"
+        loading={reconciling}
+      />
     </div>
   );
 }

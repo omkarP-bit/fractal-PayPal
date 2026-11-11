@@ -1,39 +1,90 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Clock, ShieldCheck, CreditCard, AlertCircle, Bell, Filter } from '../../components/ui/Icons';
-import { apiClient, Case } from '../../services/api';
+import { ArrowUpDown, Inbox, SearchX, X } from 'lucide-react';
+import { apiClient, type CaseSummary } from '../../services/api';
 import { useAuthStore } from '../../store/auth';
-import { Card } from '../../components/ui/Card';
-import { Button } from '../../components/ui/Button';
-import { Badge } from '../../components/ui/Badge';
+import { useGlobalSearch } from '../../lib/search';
+import { cn } from '../../lib/cn';
+import {
+  apiErrorMessage,
+  formatAbsolute,
+  formatCaseType,
+  formatTime,
+  statusMeta,
+} from '../../lib/format';
+import { PageHeader } from '../../components/ui/Panel';
+import { Button, IconButton } from '../../components/ui/Button';
+import { Select } from '../../components/ui/Input';
+import { StatusPill } from '../../components/ui/StatusPill';
+import { CopyChip } from '../../components/ui/CopyChip';
+import { Tooltip } from '../../components/ui/Tooltip';
+import { Highlight } from '../../components/ui/Highlight';
+import { EmptyState, ErrorNotice, Skeleton } from '../../components/ui/States';
 
-interface MerchantCase extends Case {
-  investigation?: {
-    category: string;
-    root_cause_hypothesis: string;
-    suggested_severity: string;
-  };
-  latest_decision?: { outcome: string };
+type StatusFilter = 'all' | 'open' | 'investigating' | 'needs-approval' | 'escalated' | 'resolved';
+type SortOption = 'attention' | 'newest' | 'oldest' | 'updated';
+
+const STATUS_OPTIONS: Array<{ value: StatusFilter; label: string }> = [
+  { value: 'all', label: 'All statuses' },
+  { value: 'needs-approval', label: 'Needs approval' },
+  { value: 'investigating', label: 'Investigating' },
+  { value: 'escalated', label: 'Escalated' },
+  { value: 'resolved', label: 'Resolved' },
+  { value: 'open', label: 'Open' },
+];
+
+const SORT_OPTIONS: Array<{ value: SortOption; label: string }> = [
+  { value: 'attention', label: 'Needs attention first' },
+  { value: 'newest', label: 'Newest first' },
+  { value: 'oldest', label: 'Oldest first' },
+  { value: 'updated', label: 'Recently updated' },
+];
+
+function matchesStatus(status: string, filter: StatusFilter): boolean {
+  switch (filter) {
+    case 'needs-approval':
+      return status === 'AWAITING_MERCHANT_APPROVAL';
+    case 'investigating':
+      return status === 'INVESTIGATING' || status === 'COLLECTING_EVIDENCE';
+    case 'escalated':
+      return status === 'ESCALATED';
+    case 'resolved':
+      return status === 'RESOLVED' || status === 'CLOSED';
+    case 'open':
+      return status === 'OPEN';
+    default:
+      return true;
+  }
 }
 
+function needsAction(status: string): boolean {
+  return status === 'AWAITING_MERCHANT_APPROVAL' || status === 'ESCALATED';
+}
+
+const TH = 'px-4 py-3 text-left text-meta font-medium text-muted';
+
 export function MerchantDashboard() {
-  const [cases, setCases] = useState<MerchantCase[]>([]);
+  const [cases, setCases] = useState<CaseSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [filter, setFilter] = useState('all');
-  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+  const [typeFilter, setTypeFilter] = useState('all');
+  const [sort, setSort] = useState<SortOption>('attention');
+  const [debouncedQuery, setDebouncedQuery] = useState('');
+  const { query, clear: clearSearch } = useGlobalSearch();
   const { logout } = useAuthStore();
   const navigate = useNavigate();
 
   const fetchCases = async () => {
+    setLoading(true);
     try {
-      setLoading(true);
       const data = await apiClient.getCases();
-      setCases(data as MerchantCase[]);
-      setError(null); // clear any stale error so Retry can recover
-    } catch (err: any) {
-      setError(err.message || 'Failed to load cases');
-      if (err.message.includes('401')) {
+      setCases(data);
+      setError(null);
+    } catch (err) {
+      const raw = err instanceof Error ? err.message : '';
+      setError(apiErrorMessage(err, 'We couldn’t reach the case service. Try again.'));
+      if (raw.includes('401')) {
         logout();
         navigate('/login');
       }
@@ -43,32 +94,140 @@ export function MerchantDashboard() {
   };
 
   useEffect(() => {
-    fetchCases();
+    void fetchCases();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const filteredCases = cases.filter((c) => {
-    const matchesFilter =
-      filter === 'all' ||
-      (filter === 'needs-approval' && c.status === 'AWAITING_MERCHANT_APPROVAL') ||
-      (filter === 'investigating' && c.status === 'INVESTIGATING') ||
-      (filter === 'escalated' && c.status === 'ESCALATED');
-    const matchesSearch =
-      c.case_number.toLowerCase().includes(search.toLowerCase()) ||
-      (c.customer?.email && c.customer.email.includes(search.toLowerCase())) ||
-      (c.order?.ref && c.order.ref.includes(search.toLowerCase()));
-    return matchesFilter && matchesSearch;
-  });
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedQuery(query.trim()), 150);
+    return () => window.clearTimeout(timer);
+  }, [query]);
 
-  const handleCaseClick = (id: string) => {
-    navigate(`/merchant/cases/${id}`);
+  const counts = useMemo(
+    () => ({
+      all: cases.length,
+      needs: cases.filter((item) => item.status === 'AWAITING_MERCHANT_APPROVAL').length,
+      investigating: cases.filter(
+        (item) => item.status === 'INVESTIGATING' || item.status === 'COLLECTING_EVIDENCE',
+      ).length,
+      escalated: cases.filter((item) => item.status === 'ESCALATED').length,
+    }),
+    [cases],
+  );
+
+  const typeOptions = useMemo(() => {
+    const seen = new Map<string, string>();
+    cases.forEach((item) => {
+      if (item.case_type && !seen.has(item.case_type)) {
+        seen.set(item.case_type, formatCaseType(item.case_type));
+      }
+    });
+    return [
+      { value: 'all', label: 'All issue types' },
+      ...Array.from(seen.entries())
+        .sort((a, b) => a[1].localeCompare(b[1]))
+        .map(([value, label]) => ({ value, label })),
+    ];
+  }, [cases]);
+
+  const filteredCases = useMemo(() => {
+    const needle = debouncedQuery.toLowerCase();
+
+    const matches = cases.filter((item) => {
+      if (!matchesStatus(item.status, statusFilter)) return false;
+      if (typeFilter !== 'all' && item.case_type !== typeFilter) return false;
+      if (!needle) return true;
+
+      const haystack = [
+        item.case_number,
+        item.customer?.name,
+        item.customer?.email,
+        item.order?.ref,
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+      return haystack.includes(needle);
+    });
+
+    const byNewest = (a: CaseSummary, b: CaseSummary) =>
+      new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+    const byUpdated = (a: CaseSummary, b: CaseSummary) =>
+      new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
+
+    return matches.sort((a, b) => {
+      switch (sort) {
+        case 'newest':
+          return byNewest(a, b);
+        case 'oldest':
+          return -byNewest(a, b);
+        case 'updated':
+          return byUpdated(a, b);
+        default:
+          if (needsAction(a.status) !== needsAction(b.status)) {
+            return needsAction(a.status) ? -1 : 1;
+          }
+          if (a.status === 'ESCALATED' && b.status === 'AWAITING_MERCHANT_APPROVAL') return -1;
+          if (b.status === 'ESCALATED' && a.status === 'AWAITING_MERCHANT_APPROVAL') return 1;
+          return byUpdated(a, b);
+      }
+    });
+  }, [cases, statusFilter, typeFilter, debouncedQuery, sort]);
+
+  const activeFilters: Array<{ key: string; label: string; remove: () => void }> = [];
+  if (statusFilter !== 'all') {
+    activeFilters.push({
+      key: 'status',
+      label: STATUS_OPTIONS.find((option) => option.value === statusFilter)?.label ?? 'Status',
+      remove: () => setStatusFilter('all'),
+    });
+  }
+  if (typeFilter !== 'all') {
+    activeFilters.push({
+      key: 'type',
+      label: formatCaseType(typeFilter),
+      remove: () => setTypeFilter('all'),
+    });
+  }
+  if (query.trim()) {
+    activeFilters.push({
+      key: 'search',
+      label: `Search: ${query.trim()}`,
+      remove: clearSearch,
+    });
+  }
+
+  const clearAll = () => {
+    setStatusFilter('all');
+    setTypeFilter('all');
+    clearSearch();
   };
+
+  const summary = [
+    { key: 'all' as const, label: 'Total cases', value: counts.all, dot: null },
+    { key: 'needs-approval' as const, label: 'Needs approval', value: counts.needs, dot: 'warning' },
+    { key: 'investigating' as const, label: 'Investigating', value: counts.investigating, dot: null },
+    { key: 'escalated' as const, label: 'Escalated', value: counts.escalated, dot: 'danger' },
+  ];
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="flex flex-col items-center gap-3">
-          <div className="w-8 h-8 border-4 border-paypal-600 border-t-transparent rounded-full animate-spin" />
-          <p className="text-gray-500 text-sm">Loading cases...</p>
+      <div className="space-y-6">
+        <PageHeader title="Cases" description="Payment exceptions for your store." />
+        <Skeleton className="h-[88px] w-full rounded-lg" />
+        <div className="rounded-lg border border-line bg-surface">
+          <div className="border-b border-line px-4 py-3">
+            <Skeleton className="h-4 w-full max-w-xl" />
+          </div>
+          {Array.from({ length: 5 }).map((_, index) => (
+            <div key={index} className="flex items-center gap-6 border-b border-line px-4 py-4 last:border-0">
+              <Skeleton className="h-4 w-16" />
+              <Skeleton className="h-4 w-40" />
+              <Skeleton className="h-4 w-28" />
+              <Skeleton className="h-4 w-40" />
+              <Skeleton className="ml-auto h-6 w-24 rounded-pill" />
+            </div>
+          ))}
         </div>
       </div>
     );
@@ -76,171 +235,285 @@ export function MerchantDashboard() {
 
   if (error) {
     return (
-      <div className="flex flex-col items-center justify-center h-64 text-center">
-        <div className="w-12 h-12 rounded-full bg-red-50 flex items-center justify-center">
-          <AlertCircle className="w-6 h-6 text-red-500" />
-        </div>
-        <h3 className="text-lg font-medium text-gray-900 mt-4">Error loading cases</h3>
-        <p className="text-sm text-gray-600">{error}</p>
-        <button
-          onClick={() => fetchCases()}
-          className="mt-4 btn-primary px-6 py-2"
-        >
-          Retry
-        </button>
+      <div className="space-y-6">
+        <PageHeader title="Cases" description="Payment exceptions for your store." />
+        <ErrorNotice
+          title="We couldn’t load your cases"
+          description={error}
+          onRetry={() => void fetchCases()}
+        />
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Cases</h1>
-          <p className="text-gray-600 text-sm">
-            Manage payment exception cases for your store
-          </p>
+    <div className="space-y-5">
+      <PageHeader title="Cases" description="Payment exceptions for your store." />
+
+      <div className="flex flex-col gap-3 xl:flex-row xl:items-center">
+        <div className="grid flex-1 grid-cols-2 overflow-hidden rounded-lg border border-line bg-surface sm:flex">
+          {summary.map((item, index) => {
+            const active = statusFilter === item.key;
+            return (
+              <button
+                key={item.key}
+                type="button"
+                onClick={() => setStatusFilter(active && item.key !== 'all' ? 'all' : item.key)}
+                aria-pressed={active}
+                aria-label={`Show ${item.label.toLowerCase()} (${item.value})`}
+                className={cn(
+                  'relative flex min-w-0 flex-1 flex-col items-start gap-0.5 px-3 py-2.5 text-left transition-colors duration-150 hover:bg-surface-muted sm:px-5 sm:py-4',
+                  index % 2 === 1 && 'border-l border-line sm:border-l-0',
+                  index >= 2 && 'border-t border-line sm:border-t-0',
+                  active && 'bg-surface-muted',
+                )}
+              >
+                {index > 0 && (
+                  <span
+                    className="absolute inset-y-3 left-0 hidden w-px bg-line sm:block"
+                    aria-hidden="true"
+                  />
+                )}
+                <span className="flex items-center gap-1.5">
+                  <span
+                    className={cn(
+                      'text-[22px] font-semibold leading-7 tabular-nums',
+                      item.value === 0 ? 'text-muted' : 'text-ink',
+                    )}
+                  >
+                    {item.value}
+                  </span>
+                  {item.dot && item.value > 0 && (
+                    <span
+                      className={cn(
+                        'h-1.5 w-1.5 rounded-full',
+                        item.dot === 'warning' ? 'bg-warning' : 'bg-danger',
+                      )}
+                      aria-hidden="true"
+                    />
+                  )}
+                </span>
+                <span className="truncate text-[12px] text-muted">{item.label}</span>
+                {active && (
+                  <span
+                    className="absolute inset-x-0 bottom-0 h-0.5 bg-blue"
+                    aria-hidden="true"
+                  />
+                )}
+              </button>
+            );
+          })}
         </div>
-        <div className="flex w-full items-center gap-3 sm:w-auto">
-          <input
-            type="text"
-            placeholder="Search cases..."
-            className="input-field w-full sm:w-96 lg:w-[32rem]"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
+
+        <div className="flex flex-wrap items-center gap-2">
+          <Select
+            aria-label="Filter by status"
+            value={statusFilter}
+            onChange={(event) => setStatusFilter(event.target.value as StatusFilter)}
+            options={STATUS_OPTIONS}
+            className="h-9 w-auto min-w-[136px] text-meta"
           />
-          <button className="btn-secondary px-3 py-2">
-            <Bell className="w-4 h-4" />
-          </button>
+          <Select
+            aria-label="Filter by issue type"
+            value={typeFilter}
+            onChange={(event) => setTypeFilter(event.target.value)}
+            options={typeOptions}
+            className="h-9 w-auto min-w-[136px] text-meta"
+          />
+          <Select
+            aria-label="Sort cases"
+            value={sort}
+            onChange={(event) => setSort(event.target.value as SortOption)}
+            options={SORT_OPTIONS}
+            className="h-9 w-auto min-w-[168px] text-meta"
+          />
         </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
-        <div className="card">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-xs font-medium text-gray-500 uppercase">Total Cases</p>
-              <p className="text-2xl font-bold text-gray-900">{cases.length}</p>
-            </div>
-            <div className="w-10 h-10 rounded-lg bg-blue-50 flex items-center justify-center">
-              <CreditCard className="w-5 h-5 text-blue-600" />
-            </div>
-          </div>
+      {activeFilters.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="inline-flex items-center gap-1 text-[12px] text-muted">
+            <ArrowUpDown className="h-3.5 w-3.5" aria-hidden="true" />
+            Filtered
+          </span>
+          {activeFilters.map((filter) => (
+            <span
+              key={filter.key}
+              className="inline-flex max-w-full items-center gap-1 rounded-pill bg-info-bg py-0.5 pl-2.5 pr-0.5 text-[12px] text-info"
+            >
+              <span className="truncate">{filter.label}</span>
+              <IconButton
+                label={`Remove ${filter.key} filter`}
+                size="sm"
+                onClick={filter.remove}
+                className="h-6 w-6 hover:bg-surface"
+              >
+                <X className="h-3 w-3" aria-hidden="true" />
+              </IconButton>
+            </span>
+          ))}
+          <Button variant="tertiary" size="sm" onClick={clearAll} className="h-7 px-1.5">
+            Clear all
+          </Button>
         </div>
-        <div className="card">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-xs font-medium text-gray-500 uppercase">Investigating</p>
-              <p className="text-2xl font-bold text-gray-900">
-                {cases.filter((c) => c.status === 'INVESTIGATING').length}
-              </p>
-            </div>
-            <div className="w-10 h-10 rounded-lg bg-blue-50 flex items-center justify-center">
-              <Clock className="w-5 h-5 text-blue-600" />
-            </div>
-          </div>
-        </div>
-        <div className="card">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-xs font-medium text-gray-500 uppercase">Needs Approval</p>
-              <p className="text-2xl font-bold text-gray-900">
-                {cases.filter((c) => c.status === 'AWAITING_MERCHANT_APPROVAL').length}
-              </p>
-            </div>
-            <div className="w-10 h-10 rounded-lg bg-amber-50 flex items-center justify-center">
-              <Bell className="w-5 h-5 text-amber-600" />
-            </div>
-          </div>
-        </div>
-        <div className="card">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-xs font-medium text-gray-500 uppercase">Escalated</p>
-              <p className="text-2xl font-bold text-gray-900">
-                {cases.filter((c) => c.status === 'ESCALATED').length}
-              </p>
-            </div>
-            <div className="w-10 h-10 rounded-lg bg-red-50 flex items-center justify-center">
-              <AlertCircle className="w-5 h-5 text-red-600" />
-            </div>
-          </div>
-        </div>
-      </div>
+      )}
 
-      <div className="flex gap-2">
-        {['all', 'needs-approval', 'investigating', 'escalated'].map((f) => (
-          <button
-            key={f}
-            onClick={() => setFilter(f)}
-            className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${
-              filter === f
-                ? 'bg-paypal-600 text-white'
-                : 'bg-white dark:bg-gray-800 text-gray-600 border border-gray-200 hover:bg-gray-50'
-            }`}
-          >
-            {f.charAt(0).toUpperCase() + f.slice(1).replace('-', ' ')}
-          </button>
-        ))}
-      </div>
-
-      <div className="card">
-        <div className="overflow-hidden">
-          <table className="w-full text-left border-collapse">
+      <div className="overflow-hidden rounded-lg border border-line bg-surface">
+        <div className="hidden overflow-x-auto xl:block">
+          <table className="w-full min-w-[980px] border-collapse text-left">
             <thead>
-              <tr className="border-b border-gray-200 bg-gray-50">
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Case</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Customer</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Order</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Updated</th>
+              <tr className="border-b border-line bg-surface-muted">
+                <th scope="col" className={cn(TH, 'w-[112px]')}>
+                  Case
+                </th>
+                <th scope="col" className={cn(TH, 'min-w-[190px]')}>
+                  Customer
+                </th>
+                <th scope="col" className={cn(TH, 'w-[232px]')}>
+                  Order
+                </th>
+                <th scope="col" className={cn(TH, 'min-w-[180px]')}>
+                  Issue
+                </th>
+                <th scope="col" className={cn(TH, 'w-[148px]')}>
+                  Status
+                </th>
+                <th scope="col" className={cn(TH, 'w-[110px] text-right')}>
+                  Updated
+                </th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-200">
-              {filteredCases.map((c) => (
-                <tr
-                  key={c.id}
-                  onClick={() => handleCaseClick(c.id)}
-                  className="cursor-pointer hover:bg-gray-50 transition-colors group"
-                >
-                  <td className="px-6 py-4">
-                    <div className="font-medium text-gray-900">{c.case_number}</div>
-                    <div className="text-xs text-gray-500">{c.id.slice(0, 8)}...</div>
-                  </td>
-                  <td className="px-6 py-4">
-                    <div className="font-medium text-gray-900">{c.customer?.name || 'Unknown'}</div>
-                    <div className="text-xs text-gray-500">{c.customer?.email || '-'}</div>
-                  </td>
-                  <td className="px-6 py-4">
-                    <div className="font-medium text-gray-900">{c.order?.ref || '-'}</div>
-                    <div className="text-xs text-gray-500">{c.order?.status || '-'}</div>
-                  </td>
-                  <td className="px-6 py-4">
-                    <span className="text-xs text-gray-500">{c.case_type?.replace('_', ' ') || '-'}</span>
-                  </td>
-                  <td className="px-6 py-4">
-                    <span className={`badge badge-${c.status.toLowerCase()}`}>
-                      {c.status.replace('_', ' ')}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 text-right text-sm text-gray-500">
-                    {new Date(c.updated_at).toLocaleDateString()}
-                  </td>
-                </tr>
-              ))}
-              {filteredCases.length === 0 && (
-                <tr>
-                  <td colSpan={6} className="px-6 py-12 text-center">
-                    <div className="flex flex-col items-center gap-3">
-                      <p className="text-gray-500 text-sm">No cases found</p>
-                    </div>
-                  </td>
-                </tr>
-              )}
+            <tbody>
+              {filteredCases.map((item) => {
+                const action = needsAction(item.status);
+                const href = `/merchant/cases/${item.id}`;
+                return (
+                  <tr
+                    key={item.id}
+                    className="group/row relative border-b border-line transition-colors duration-100 last:border-0 hover:bg-surface-muted"
+                  >
+                    <td className="px-4 py-2.5">
+                      {action && (
+                        <span
+                          className={cn(
+                            'absolute inset-y-0 left-0 w-[3px]',
+                            item.status === 'ESCALATED' ? 'bg-danger' : 'bg-warning',
+                          )}
+                          aria-hidden="true"
+                        />
+                      )}
+                      <Link
+                        to={href}
+                        aria-label={`Open case ${item.case_number}`}
+                        className="absolute inset-0 z-10 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue focus-visible:ring-inset"
+                      />
+                      <span className="text-body font-semibold text-ink">{item.case_number}</span>
+                    </td>
+                    <td className="px-4 py-2.5">
+                      <p className="truncate text-body font-medium text-ink">
+                        <Highlight
+                          text={item.customer?.name || item.customer?.email || 'Unknown customer'}
+                          query={debouncedQuery}
+                        />
+                      </p>
+                      {item.customer?.email && (
+                        <p className="truncate text-[12px] text-muted">
+                          <Highlight text={item.customer.email} query={debouncedQuery} />
+                        </p>
+                      )}
+                    </td>
+                    <td className="px-4 py-2.5">
+                      <div className="flex items-start gap-1">
+                        <span className="relative z-20 min-w-0 break-all font-mono text-[12px] leading-5 text-ink">
+                          <Highlight text={item.order?.ref ?? '—'} query={debouncedQuery} />
+                        </span>
+                        {item.order?.ref && (
+                          <span className="relative z-20 shrink-0">
+                            <CopyChip
+                              value={item.order.ref}
+                              title={`Copy order ${item.order.ref}`}
+                              iconOnly
+                              reveal
+                              className="[&>button]:h-5 [&>button]:bg-transparent [&>button]:px-1"
+                            />
+                          </span>
+                        )}
+                      </div>
+                      {item.order?.status && (
+                        <div className="mt-1">
+                          <StatusPill meta={statusMeta(item.order.status)} size="sm" withDot={false} />
+                        </div>
+                      )}
+                    </td>
+                    <td className="px-4 py-2.5 text-body text-ink">
+                      {formatCaseType(item.case_type)}
+                    </td>
+                    <td className="px-4 py-2.5">
+                      <StatusPill meta={statusMeta(item.status)} />
+                    </td>
+                    <td className="px-4 py-2.5 text-right">
+                      <Tooltip content={formatAbsolute(item.updated_at)} side="left">
+                        <time dateTime={item.updated_at} className="text-[12px] text-muted">
+                          {formatTime(item.updated_at)}
+                        </time>
+                      </Tooltip>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
+
+        <div className="grid gap-px bg-line sm:grid-cols-2 xl:hidden">
+          {filteredCases.map((item) => (
+            <Link
+              key={item.id}
+              to={`/merchant/cases/${item.id}`}
+              className={cn(
+                'block bg-surface px-4 py-3 transition-colors hover:bg-surface-muted',
+                needsAction(item.status) && 'border-l-[3px] border-l-warning',
+              )}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-body font-semibold text-ink">{item.case_number}</p>
+                  <p className="mt-0.5 text-meta text-muted">
+                    {item.customer?.name || item.customer?.email || 'Unknown customer'}
+                  </p>
+                </div>
+                <StatusPill meta={statusMeta(item.status)} size="sm" />
+              </div>
+              <p className="mt-2 text-meta text-ink">{formatCaseType(item.case_type)}</p>
+              <div className="mt-1.5 flex items-center justify-between gap-3 text-[12px] text-muted">
+                <span className="font-mono">{item.order?.ref ?? '—'}</span>
+                <span>{formatTime(item.updated_at)}</span>
+              </div>
+            </Link>
+          ))}
+          {filteredCases.length % 2 === 1 && (
+            <div className="hidden bg-surface sm:block" aria-hidden="true" />
+          )}
+        </div>
+
+        {filteredCases.length === 0 && (
+          <EmptyState
+            icon={cases.length === 0 ? <Inbox className="h-5 w-5" /> : <SearchX className="h-5 w-5" />}
+            title={cases.length === 0 ? 'No cases yet' : 'No cases match your filters'}
+            description={
+              cases.length === 0
+                ? 'When a customer reports a payment issue, it appears here.'
+                : 'Try a different status, issue type or search term.'
+            }
+            action={
+              cases.length > 0 ? (
+                <Button variant="outline" size="sm" onClick={clearAll}>
+                  Clear filters
+                </Button>
+              ) : undefined
+            }
+          />
+        )}
       </div>
     </div>
   );
