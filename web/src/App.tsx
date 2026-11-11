@@ -38,12 +38,12 @@ export default function Root() {
         toastOptions={{
           classNames: {
             toast:
-              'rounded-lg border border-line bg-surface text-ink shadow-pop font-sans text-body',
-            title: 'text-body font-semibold text-ink',
+              'rounded border-2 border-line bg-surface text-ink shadow-hard-lg font-sans text-body',
+            title: 'text-body font-extrabold text-ink',
             description: 'text-meta text-muted',
-            actionButton: 'rounded-pill bg-blue text-white text-meta font-semibold',
-            cancelButton: 'rounded-pill bg-surface-muted text-ink text-meta font-semibold',
-            closeButton: 'border-line bg-surface text-muted',
+            actionButton: 'rounded border-2 border-line bg-blue text-[color:var(--text-on-blue)] text-meta font-extrabold',
+            cancelButton: 'rounded border-2 border-line bg-surface-alt text-ink text-meta font-extrabold',
+            closeButton: 'border-line bg-surface text-ink',
           },
         }}
       />

@@ -46,10 +46,10 @@ function roleFor(user: ReturnType<typeof useAuthStore.getState>['user']): Role {
 function Brand({ to }: { to: string }) {
   return (
     <Link to={to} className="flex shrink-0 items-center gap-2.5" aria-label="FRACTAL home">
-      <span className="flex h-8 w-8 items-center justify-center rounded-md bg-navy text-[15px] font-semibold text-[color:var(--surface)]">
+      <span className="flex h-9 w-9 items-center justify-center rounded border-2 border-line bg-[#003087] text-[16px] font-extrabold text-white shadow-hard">
         F
       </span>
-      <span className="hidden text-[15px] font-semibold tracking-[0.1em] text-ink sm:inline">
+      <span className="hidden text-[15px] font-extrabold uppercase tracking-[0.12em] text-ink sm:inline">
         FRACTAL
       </span>
     </Link>
@@ -153,27 +153,27 @@ function Shell() {
     <div className="app-frame bg-bg">
       <a
         href="#main-content"
-        className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[200] focus:rounded-md focus:bg-surface focus:px-4 focus:py-2 focus:text-body focus:text-blue focus:shadow-pop"
+        className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[200] focus:rounded-md focus:bg-surface focus:px-4 focus:py-2 focus:text-body focus:text-blue focus:shadow-hard"
       >
         Skip to content
       </a>
 
-      <header className="sticky top-0 z-40 border-b border-line bg-surface">
+      <header className="sticky top-0 z-40 border-b-2 border-line bg-surface">
         <div className="flex h-16 items-center gap-3 px-4 sm:gap-4 sm:px-6">
           <Brand to={homePath} />
 
           {isDemo && (
-            <span className="hidden items-center gap-1.5 rounded-pill bg-warning-bg px-2.5 py-1 text-[11px] font-medium text-warning sm:inline-flex">
-              <FlaskConical className="h-3.5 w-3.5" aria-hidden="true" strokeWidth={1.75} />
+            <span className="hidden items-center gap-1.5 rounded-pill border-2 border-line bg-warning px-2 py-0.5 text-[11px] font-bold uppercase tracking-[0.04em] text-[color:var(--warning-ink)] shadow-hard sm:inline-flex">
+              <FlaskConical className="h-3.5 w-3.5" aria-hidden="true" strokeWidth={2.5} />
               Demo mode
             </span>
           )}
 
-          <div role="search" className="relative mx-auto min-w-0 flex-1 md:max-w-[480px]">
+          <div role="search" className="relative mx-auto min-w-0 flex-1 md:max-w-[560px]">
             <Search
               className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted"
               aria-hidden="true"
-              strokeWidth={1.75}
+              strokeWidth={2}
             />
             <input
               ref={inputRef}
@@ -182,7 +182,7 @@ function Shell() {
               onChange={(event) => setQuery(event.target.value)}
               placeholder="Search cases, customers or orders"
               aria-label="Search cases, customers or orders"
-              className="h-10 w-full rounded-pill border border-line bg-surface-muted pl-9 pr-16 text-meta text-ink placeholder:text-muted transition-colors duration-150 focus:border-blue focus:outline-none [&::-webkit-search-cancel-button]:hidden"
+              className="h-12 w-full rounded border-2 border-line bg-surface pl-10 pr-16 text-body font-medium text-ink placeholder:text-muted/70 transition-shadow duration-100 focus:shadow-[4px_4px_0_var(--brand-sky)] focus:outline-none [&::-webkit-search-cancel-button]:hidden"
             />
             {query ? (
               <button
@@ -193,12 +193,12 @@ function Shell() {
                 }}
                 aria-label="Clear search"
                 title="Clear search"
-                className="absolute right-1.5 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-pill text-muted transition-colors hover:bg-surface hover:text-ink"
+                className="absolute right-1.5 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded text-ink transition-colors hover:bg-surface-alt"
               >
-                <X className="h-3.5 w-3.5" aria-hidden="true" />
+                <X className="h-4 w-4" aria-hidden="true" />
               </button>
             ) : (
-              <kbd className="pointer-events-none absolute right-2.5 top-1/2 hidden -translate-y-1/2 rounded-sm border border-line bg-surface px-1.5 py-0.5 font-sans text-[11px] text-muted sm:block">
+              <kbd className="pointer-events-none absolute right-2.5 top-1/2 hidden -translate-y-1/2 rounded-pill border border-line bg-surface-alt px-1.5 py-0.5 font-mono text-[11px] font-bold text-ink sm:block">
                 /
               </kbd>
             )}
@@ -216,9 +216,9 @@ function Shell() {
               }}
             >
               {theme === 'dark' ? (
-                <Sun className="h-4 w-4" aria-hidden="true" strokeWidth={1.75} />
+                <Sun className="h-5 w-5" aria-hidden="true" strokeWidth={2} />
               ) : (
-                <Moon className="h-4 w-4" aria-hidden="true" strokeWidth={1.75} />
+                <Moon className="h-5 w-5" aria-hidden="true" strokeWidth={2} />
               )}
             </IconButton>
 
@@ -228,24 +228,24 @@ function Shell() {
                 onClick={() => setMenuOpen((open) => !open)}
                 aria-haspopup="menu"
                 aria-expanded={menuOpen}
-                className="flex h-10 items-center gap-2 rounded-pill pl-1 pr-2 transition-colors hover:bg-surface-muted"
+                className="flex h-11 items-center gap-2 rounded px-1.5 transition-colors hover:bg-surface-alt"
               >
-                <span className="flex h-8 w-8 items-center justify-center rounded-full bg-info-bg text-[12px] font-semibold text-info">
+                <span className="flex h-9 w-9 items-center justify-center rounded border-2 border-line bg-info text-[12px] font-extrabold text-[color:var(--info-ink)]">
                   {initials(displayName)}
                 </span>
-                <ChevronDown className="hidden h-3.5 w-3.5 text-muted sm:block" aria-hidden="true" />
+                <ChevronDown className="hidden h-4 w-4 text-ink sm:block" aria-hidden="true" strokeWidth={2.5} />
                 <span className="sr-only">Account menu</span>
               </button>
 
               {menuOpen && (
                 <div
                   role="menu"
-                  className="absolute right-0 top-full z-50 mt-2 w-64 animate-slide-up rounded-lg border border-line bg-surface p-1.5 shadow-pop"
+                  className="absolute right-0 top-full z-50 mt-2 w-72 animate-slide-up rounded border-2 border-line bg-surface p-1.5 shadow-hard-lg"
                 >
-                  <div className="border-b border-line px-3 py-3">
-                    <p className="truncate text-body font-semibold text-ink">{displayName}</p>
-                    {email && <p className="truncate text-meta text-muted">{email}</p>}
-                    <span className="mt-2 inline-flex rounded-pill bg-info-bg px-2 py-0.5 text-[11px] font-medium text-info">
+                  <div className="border-b-2 border-line px-3 py-3">
+                    <p className="truncate text-body font-bold text-ink">{displayName}</p>
+                    {email && <p className="truncate font-mono text-[12px] text-muted">{email}</p>}
+                    <span className="mt-2 inline-flex rounded-pill border-2 border-line bg-blue px-2 py-0.5 text-[11px] font-bold uppercase tracking-[0.04em] text-white">
                       {roleLabel}
                     </span>
                   </div>
@@ -256,18 +256,18 @@ function Shell() {
                       setMenuOpen(false);
                       setShortcutsOpen(true);
                     }}
-                    className="mt-1.5 flex w-full items-center gap-2 rounded-sm px-3 py-2 text-left text-body text-ink transition-colors hover:bg-surface-muted"
+                    className="mt-1.5 flex w-full items-center gap-2 rounded px-3 py-2 text-left text-body font-medium text-ink transition-colors hover:bg-surface-alt"
                   >
-                    <Keyboard className="h-4 w-4 text-muted" aria-hidden="true" strokeWidth={1.75} />
+                    <Keyboard className="h-4 w-4 text-ink" aria-hidden="true" strokeWidth={2} />
                     Keyboard shortcuts
                   </button>
                   <button
                     type="button"
                     role="menuitem"
                     onClick={signOut}
-                    className="flex w-full items-center gap-2 rounded-sm px-3 py-2 text-left text-body text-ink transition-colors hover:bg-surface-muted"
+                    className="flex w-full items-center gap-2 rounded px-3 py-2 text-left text-body font-medium text-ink transition-colors hover:bg-surface-alt"
                   >
-                    <LogOut className="h-4 w-4 text-muted" aria-hidden="true" strokeWidth={1.75} />
+                    <LogOut className="h-4 w-4 text-ink" aria-hidden="true" strokeWidth={2} />
                     Sign out
                   </button>
                 </div>
@@ -289,24 +289,28 @@ function Shell() {
                   title={item.label}
                   aria-current={active ? 'page' : undefined}
                   className={cn(
-                    'flex h-10 items-center gap-2.5 rounded-md px-2.5 text-body transition-colors duration-150 lg:px-3',
+                    'flex h-12 items-center gap-3 rounded border-2 px-2.5 text-body transition-[background-color,box-shadow,transform] duration-100 lg:px-3',
                     active
-                      ? 'bg-info-bg font-medium text-blue'
-                      : 'text-muted hover:bg-surface-muted hover:text-ink',
+                      ? 'border-line bg-yellow font-extrabold text-[color:var(--text-on-yellow)] shadow-hard'
+                      : 'border-transparent text-ink hover:bg-surface-alt',
                   )}
                 >
                   <item.icon
                     className="h-5 w-5 shrink-0"
                     aria-hidden="true"
-                    strokeWidth={1.75}
+                    strokeWidth={2}
                   />
                   <span className="hidden truncate lg:inline">{item.label}</span>
                 </Link>
               );
             })}
           </nav>
-          <p className="hidden px-4 py-4 text-[11px] leading-4 text-muted lg:block">
-            Press <kbd className="rounded-sm border border-line px-1">/</kbd> to search
+          <p className="hidden px-4 py-4 text-[11px] leading-5 text-muted lg:block">
+            Press{' '}
+            <kbd className="rounded-pill border border-line bg-surface-alt px-1.5 py-0.5 font-mono font-bold text-ink">
+              /
+            </kbd>{' '}
+            to search
           </p>
         </aside>
 
@@ -320,7 +324,7 @@ function Shell() {
 
       <nav
         aria-label="Main"
-        className="fixed inset-x-0 bottom-0 z-40 flex h-16 border-t border-line bg-surface sm:hidden"
+        className="fixed inset-x-0 bottom-0 z-40 flex h-16 border-t-2 border-line bg-surface sm:hidden"
       >
         {navItems.map((item) => {
           const active = activePath === item.path;
@@ -330,11 +334,11 @@ function Shell() {
               to={item.path}
               aria-current={active ? 'page' : undefined}
               className={cn(
-                'flex flex-1 flex-col items-center justify-center gap-1 text-[11px] transition-colors',
-                active ? 'font-semibold text-blue' : 'text-muted',
+                'flex min-h-[44px] flex-1 flex-col items-center justify-center gap-1 text-[11px] font-bold transition-colors',
+                active ? 'bg-yellow text-[color:var(--text-on-yellow)]' : 'text-ink',
               )}
             >
-              <item.icon className="h-5 w-5" aria-hidden="true" strokeWidth={1.75} />
+              <item.icon className="h-5 w-5" aria-hidden="true" strokeWidth={2} />
               {item.label}
             </Link>
           );
@@ -357,9 +361,9 @@ function Shell() {
             ['Shift + Enter', 'Add a new line'],
           ].map(([keys, action]) => (
             <div key={keys} className="flex items-center justify-between gap-4 py-2.5">
-              <dt className="text-body text-ink">{action}</dt>
+              <dt className="text-body font-medium text-ink">{action}</dt>
               <dd>
-                <kbd className="rounded-sm border border-line bg-surface-muted px-1.5 py-0.5 font-sans text-[11px] text-muted">
+                <kbd className="rounded-pill border border-line bg-surface-alt px-1.5 py-0.5 font-mono text-[11px] font-bold text-ink">
                   {keys}
                 </kbd>
               </dd>
