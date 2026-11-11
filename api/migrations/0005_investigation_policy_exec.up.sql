@@ -1,4 +1,4 @@
-CREATE TABLE investigations (
+CREATE TABLE IF NOT EXISTS investigations (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   case_id uuid NOT NULL REFERENCES exception_cases(id),
   run_number int NOT NULL,
@@ -13,7 +13,7 @@ CREATE TABLE investigations (
   UNIQUE (case_id, run_number)
 );
 
-CREATE TABLE policy_bundles (
+CREATE TABLE IF NOT EXISTS policy_bundles (
   revision text PRIMARY KEY,
   bundle_sha256 text NOT NULL,
   status text NOT NULL CHECK (status IN ('STAGED','ACTIVE','RETIRED')),
@@ -21,7 +21,7 @@ CREATE TABLE policy_bundles (
   activated_by uuid REFERENCES users(id)
 );
 
-CREATE TABLE policy_decisions (
+CREATE TABLE IF NOT EXISTS policy_decisions (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   case_id uuid NOT NULL REFERENCES exception_cases(id),
   evaluation_id uuid NOT NULL UNIQUE,
@@ -36,9 +36,9 @@ CREATE TABLE policy_decisions (
   requested_by uuid REFERENCES users(id),
   created_at timestamptz NOT NULL DEFAULT now()
 );
-CREATE INDEX ix_decisions_case ON policy_decisions (case_id, created_at);
+CREATE INDEX IF NOT EXISTS ix_decisions_case ON policy_decisions (case_id, created_at);
 
-CREATE TABLE approvals (
+CREATE TABLE IF NOT EXISTS approvals (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   case_id uuid NOT NULL REFERENCES exception_cases(id),
   policy_decision_id uuid NOT NULL REFERENCES policy_decisions(id),
@@ -54,7 +54,7 @@ CREATE TABLE approvals (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE TABLE action_executions (
+CREATE TABLE IF NOT EXISTS action_executions (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   case_id uuid NOT NULL REFERENCES exception_cases(id),
   policy_decision_id uuid NOT NULL REFERENCES policy_decisions(id),
@@ -68,5 +68,5 @@ CREATE TABLE action_executions (
   started_at timestamptz NOT NULL DEFAULT now(),
   completed_at timestamptz
 );
-CREATE UNIQUE INDEX uq_action_once ON action_executions (case_id, action_type, params_sha256)
+CREATE UNIQUE INDEX IF NOT EXISTS uq_action_once ON action_executions (case_id, action_type, params_sha256)
   WHERE status IN ('IN_PROGRESS','SUCCEEDED');

@@ -1,4 +1,4 @@
-CREATE TABLE webhook_events (
+CREATE TABLE IF NOT EXISTS webhook_events (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   provider text NOT NULL,
   provider_event_id text NOT NULL,
@@ -14,9 +14,9 @@ CREATE TABLE webhook_events (
   processed_at timestamptz,
   UNIQUE (provider, provider_event_id)
 );
-CREATE INDEX ix_webhook_resource ON webhook_events (provider, resource_id);
+CREATE INDEX IF NOT EXISTS ix_webhook_resource ON webhook_events (provider, resource_id);
 
-CREATE TABLE security_events (
+CREATE TABLE IF NOT EXISTS security_events (
   id bigserial PRIMARY KEY,
   event_type text NOT NULL,
   provider text,
@@ -26,7 +26,7 @@ CREATE TABLE security_events (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE TABLE case_evidence (
+CREATE TABLE IF NOT EXISTS case_evidence (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   case_id uuid NOT NULL REFERENCES exception_cases(id),
   evidence_type text NOT NULL CHECK (evidence_type IN
@@ -38,4 +38,4 @@ CREATE TABLE case_evidence (
   payload_sha256 text NOT NULL,
   created_at timestamptz NOT NULL DEFAULT now()
 );
-CREATE INDEX ix_evidence_case ON case_evidence (case_id, fetched_at);
+CREATE INDEX IF NOT EXISTS ix_evidence_case ON case_evidence (case_id, fetched_at);

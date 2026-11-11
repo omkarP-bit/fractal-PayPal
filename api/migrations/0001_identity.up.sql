@@ -1,6 +1,6 @@
 CREATE EXTENSION IF NOT EXISTS citext;
 
-CREATE TABLE users (
+CREATE TABLE IF NOT EXISTS users (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   email citext NOT NULL UNIQUE,
   display_name text NOT NULL,
@@ -9,7 +9,7 @@ CREATE TABLE users (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE TABLE merchants (
+CREATE TABLE IF NOT EXISTS merchants (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   legal_name text NOT NULL,
   country char(2) NOT NULL,
@@ -20,7 +20,7 @@ CREATE TABLE merchants (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE TABLE merchant_members (
+CREATE TABLE IF NOT EXISTS merchant_members (
   merchant_id uuid NOT NULL REFERENCES merchants(id),
   user_id uuid NOT NULL REFERENCES users(id),
   role text NOT NULL CHECK (role IN ('MERCHANT_ADMIN','MERCHANT_STAFF')),
@@ -28,7 +28,7 @@ CREATE TABLE merchant_members (
   PRIMARY KEY (merchant_id, user_id)
 );
 
-CREATE TABLE provider_accounts (
+CREATE TABLE IF NOT EXISTS provider_accounts (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   merchant_id uuid NOT NULL REFERENCES merchants(id),
   provider text NOT NULL CHECK (provider IN ('PAYPAL')),

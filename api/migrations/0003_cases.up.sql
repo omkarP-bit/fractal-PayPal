@@ -1,6 +1,11 @@
-CREATE SEQUENCE case_number_seq START 10000;
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_class WHERE relkind = 'S' AND relname = 'case_number_seq') THEN
+    CREATE SEQUENCE case_number_seq START 10000;
+  END IF;
+END $$;
 
-CREATE TABLE exception_cases (
+CREATE TABLE IF NOT EXISTS exception_cases (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   case_number text NOT NULL UNIQUE DEFAULT ('FR-' || nextval('case_number_seq')),
   merchant_id uuid NOT NULL REFERENCES merchants(id),
@@ -19,12 +24,12 @@ CREATE TABLE exception_cases (
   updated_at timestamptz NOT NULL DEFAULT now(),
   closed_at timestamptz
 );
-CREATE UNIQUE INDEX uq_live_case ON exception_cases (payment_transaction_id, case_type)
+CREATE UNIQUE INDEX IF NOT EXISTS uq_live_case ON exception_cases (payment_transaction_id, case_type)
   WHERE status NOT IN ('RESOLVED','REJECTED','CLOSED');
-CREATE INDEX ix_cases_merchant ON exception_cases (merchant_id, status);
-CREATE INDEX ix_cases_customer ON exception_cases (customer_id, status);
+CREATE INDEX IF NOT EXISTS ix_cases_merchant ON exception_cases (merchant_id, status);
+CREATE INDEX IF NOT EXISTS ix_cases_customer ON exception_cases (customer_id, status);
 
-CREATE TABLE case_messages (
+CREATE TABLE IF NOT EXISTS case_messages (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   case_id uuid NOT NULL REFERENCES exception_cases(id),
   author_id uuid REFERENCES users(id),
@@ -33,4 +38,4 @@ CREATE TABLE case_messages (
   body text NOT NULL,
   created_at timestamptz NOT NULL DEFAULT now()
 );
-CREATE INDEX ix_messages_case ON case_messages (case_id, created_at);
+CREATE INDEX IF NOT EXISTS ix_messages_case ON case_messages (case_id, created_at);

@@ -1,4 +1,4 @@
-CREATE TABLE audit_events (
+CREATE TABLE IF NOT EXISTS audit_events (
   seq bigserial PRIMARY KEY,
   case_id uuid REFERENCES exception_cases(id),
   actor_type text NOT NULL CHECK (actor_type IN ('CUSTOMER','MERCHANT_USER','SYSTEM','AGENT','POLICY','PROVIDER')),
@@ -10,9 +10,9 @@ CREATE TABLE audit_events (
   event_hash text NOT NULL,
   created_at timestamptz NOT NULL DEFAULT now()
 );
-CREATE INDEX ix_audit_case ON audit_events (case_id, seq);
+CREATE INDEX IF NOT EXISTS ix_audit_case ON audit_events (case_id, seq);
 
-CREATE TABLE outbox_events (
+CREATE TABLE IF NOT EXISTS outbox_events (
   id bigserial PRIMARY KEY,
   case_id uuid REFERENCES exception_cases(id),
   topic text NOT NULL,
@@ -21,7 +21,7 @@ CREATE TABLE outbox_events (
   published_at timestamptz
 );
 
-CREATE TABLE anomaly_scores (
+CREATE TABLE IF NOT EXISTS anomaly_scores (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   merchant_id uuid NOT NULL REFERENCES merchants(id),
   case_id uuid REFERENCES exception_cases(id),
