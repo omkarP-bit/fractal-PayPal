@@ -1,4 +1,5 @@
 import { createBrowserRouter, RouterProvider } from 'react-router-dom';
+import { Toaster } from 'sonner';
 import { Layout } from './components/Layout';
 import { LoginPage } from './pages/Login';
 import { CustomerDashboard } from './pages/customer/Dashboard';
@@ -26,5 +27,26 @@ const router = createBrowserRouter([
 ]);
 
 export default function Root() {
-  return <RouterProvider router={router} />;
+  return (
+    <>
+      <RouterProvider router={router} />
+      <Toaster
+        position="bottom-right"
+        offset={24}
+        mobileOffset={{ bottom: 80, right: 16, left: 16 }}
+        gap={10}
+        toastOptions={{
+          classNames: {
+            toast:
+              'rounded-lg border border-line bg-surface text-ink shadow-pop font-sans text-body',
+            title: 'text-body font-semibold text-ink',
+            description: 'text-meta text-muted',
+            actionButton: 'rounded-pill bg-blue text-white text-meta font-semibold',
+            cancelButton: 'rounded-pill bg-surface-muted text-ink text-meta font-semibold',
+            closeButton: 'border-line bg-surface text-muted',
+          },
+        }}
+      />
+    </>
+  );
 }

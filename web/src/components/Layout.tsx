@@ -1,179 +1,382 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
-  Menu,
-  Mail,
-  ShieldCheck,
-  BarChart3,
-  CreditCard,
-  Users,
-  Settings,
+  ChevronDown,
+  FilePlus2,
+  FlaskConical,
+  Inbox,
+  Keyboard,
   LogOut,
-  Home,
-} from '../components/ui/Icons';
-import { Button } from '../components/ui/Button';
+  Moon,
+  Search,
+  Sun,
+  X,
+} from 'lucide-react';
+import { cn } from '../lib/cn';
+import { applyTheme, resolveTheme, type Theme } from '../lib/theme';
+import { useGlobalSearch, GlobalSearchProvider } from '../lib/search';
 import { useAuthStore } from '../store/auth';
+import { IconButton } from './ui/Button';
+import { Dialog } from './ui/Dialog';
+import { initials } from '../lib/format';
 
-const NAV_ITEMS = [
-  { path: '/customer/cases', label: 'Cases', icon: Home, role: 'CUSTOMER' },
-  { path: '/customer/cases/new', label: 'Report Issue', icon: Mail, role: 'CUSTOMER' },
-  { path: '/merchant/cases', label: 'Cases', icon: Mail, role: 'MERCHANT' },
-  { path: '/demo', label: 'Demo Controls', icon: Settings, role: 'MERCHANT' },
-];
+type Role = 'CUSTOMER' | 'MERCHANT';
 
-export function Layout({ children }: { children: React.ReactNode }) {
-  const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [dark, setDark] = useState(() => document.documentElement.classList.contains('dark'));
+interface NavItem {
+  path: string;
+  label: string;
+  icon: typeof Inbox;
+}
+
+const NAV_ITEMS: Record<Role, NavItem[]> = {
+  CUSTOMER: [
+    { path: '/customer/cases', label: 'My cases', icon: Inbox },
+    { path: '/customer/cases/new', label: 'Report an issue', icon: FilePlus2 },
+  ],
+  MERCHANT: [
+    { path: '/merchant/cases', label: 'Cases', icon: Inbox },
+    { path: '/demo', label: 'Demo controls', icon: FlaskConical },
+  ],
+};
+
+function roleFor(user: ReturnType<typeof useAuthStore.getState>['user']): Role {
+  return user?.kind === 'MERCHANT_USER' ? 'MERCHANT' : 'CUSTOMER';
+}
+
+function Brand({ to }: { to: string }) {
+  return (
+    <Link to={to} className="flex shrink-0 items-center gap-2.5" aria-label="FRACTAL home">
+      <span className="flex h-8 w-8 items-center justify-center rounded-md bg-navy text-[15px] font-semibold text-[color:var(--surface)]">
+        F
+      </span>
+      <span className="hidden text-[15px] font-semibold tracking-[0.1em] text-ink sm:inline">
+        FRACTAL
+      </span>
+    </Link>
+  );
+}
+
+function Shell() {
   const location = useLocation();
   const navigate = useNavigate();
   const { user, logout } = useAuthStore();
+  const { query, setQuery, clear, inputRef } = useGlobalSearch();
+  const [theme, setTheme] = useState<Theme>(() => resolveTheme());
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
 
-  // Unauthenticated visitors always land on the login screen
-  // (instead of a broken "Guest" dashboard).
+  const isLogin = location.pathname === '/login';
+  const role = roleFor(user);
+  const homePath = role === 'MERCHANT' ? '/merchant/cases' : '/customer/cases';
+  const isDemo = location.pathname.startsWith('/demo');
+
   useEffect(() => {
-    if (!user && location.pathname !== '/login') {
-      navigate('/login', { replace: true });
-    }
-  }, [user, location.pathname, navigate]);
+    if (!user && !isLogin) navigate('/login', { replace: true });
+  }, [user, isLogin, navigate]);
 
-  // Nav follows the signed-in user: merchant users see merchant links.
-  const role = user?.kind === 'MERCHANT_USER' ? 'MERCHANT' : 'CUSTOMER';
+  useEffect(() => {
+    applyTheme(theme);
+  }, [theme]);
 
-  // Merchant sees all tabs (customer + merchant) — original behavior.
-  const visibleItems = NAV_ITEMS.filter((item) => item.role === role || item.role === 'CUSTOMER');
-  // Highlight only the most specific match, so a child route
-  // (e.g. /customer/cases/new) doesn't leave its parent (/customer/cases) lit too.
-  const activePath = visibleItems
+  // "g c" opens the cases list for the current role.
+  useEffect(() => {
+    if (isLogin) return;
+    let lastG = 0;
+    const onKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      const typing =
+        target?.tagName === 'INPUT' ||
+        target?.tagName === 'TEXTAREA' ||
+        target?.tagName === 'SELECT' ||
+        target?.isContentEditable;
+      if (typing || event.metaKey || event.ctrlKey || event.altKey) return;
+
+      if (event.key.toLowerCase() === 'g') {
+        lastG = Date.now();
+        return;
+      }
+      if (event.key.toLowerCase() === 'c' && Date.now() - lastG < 1200) {
+        lastG = 0;
+        navigate(homePath);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [homePath, isLogin, navigate]);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onPointerDown = (event: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setMenuOpen(false);
+      }
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setMenuOpen(false);
+    };
+    document.addEventListener('mousedown', onPointerDown);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', onPointerDown);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [menuOpen]);
+
+  if (isLogin) {
+    return (
+      <main id="main-content" className="min-h-screen bg-bg">
+        <Outlet />
+      </main>
+    );
+  }
+
+  if (!user) return null;
+
+  const navItems = NAV_ITEMS[role];
+  const activePath = navItems
     .map((item) => item.path)
-    .filter((path) => location.pathname === path || location.pathname.startsWith(`${path}/`))
+    .filter(
+      (path) => location.pathname === path || location.pathname.startsWith(`${path}/`),
+    )
     .sort((a, b) => b.length - a.length)[0];
 
-  const toggleTheme = () => {
-    const next = !dark;
-    setDark(next);
-    document.documentElement.classList.toggle('dark', next);
-    try {
-      localStorage.setItem('theme', next ? 'dark' : 'light');
-    } catch {
-      // ignore storage errors (e.g. private mode)
-    }
+  const displayName = user.display_name || user.email || 'Account';
+  const email = user.email ?? '';
+  const roleLabel = role === 'MERCHANT' ? 'Merchant admin' : 'Customer';
+  const signOut = () => {
+    logout();
+    navigate('/login');
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {sidebarOpen && (
-        <div className="fixed inset-0 bg-black/50 z-40" onClick={() => setSidebarOpen(false)} />
-      )}
-
-      <aside
-        className={`fixed left-0 top-0 bottom-0 w-64 bg-white dark:bg-gray-800 border-r border-gray-200 z-50 transition-transform duration-300 md:translate-x-0 ${
-          sidebarOpen ? 'translate-x-0' : '-translate-x-full'
-        }`}
+    <div className="min-h-screen bg-bg">
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[200] focus:rounded-md focus:bg-surface focus:px-4 focus:py-2 focus:text-body focus:text-blue focus:shadow-pop"
       >
-        <div className="flex items-center justify-between h-16 px-6 border-b border-gray-200">
-          <div className="flex items-center gap-3">
-            <div className="bg-paypal-600 rounded-lg p-2 flex items-center justify-center">
-              <span className="text-white font-bold text-xl tracking-tight">F</span>
-            </div>
-            <span className="font-bold text-gray-900 tracking-tight text-lg">FRACTAL</span>
-          </div>
-          <button onClick={() => setSidebarOpen(false)} className="text-gray-400 hover:text-gray-600 md:hidden">
-            <span className="sr-only">Close menu</span>
-            <div className="w-6 h-6">
-              <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"></path>
-              </svg>
-            </div>
-          </button>
-        </div>
+        Skip to content
+      </a>
 
-        <nav className="p-4 space-y-1">
-          {visibleItems.map((item) => (
-            <Link
-              key={item.path}
-              to={item.path}
-              className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-                activePath === item.path
-                  ? 'bg-paypal-50 text-paypal-600 border-r-2 border-paypal-600 dark:text-paypal-300'
-                  : 'text-gray-600 hover:bg-gray-50 hover:text-paypal-600 dark:hover:text-paypal-300'
-              }`}
-            >
-              <item.icon className="w-4 h-4" />
-              {item.label}
-            </Link>
-          ))}
-        </nav>
+      <header className="sticky top-0 z-40 border-b border-line bg-surface">
+        <div className="flex h-16 items-center gap-3 px-4 sm:gap-4 sm:px-6">
+          <Brand to={homePath} />
 
-        <div className="mt-auto p-6 border-t border-gray-200">
-          <button
-            onClick={() => {
-              logout();
-              navigate('/login');
-            }}
-            className="w-full flex items-center justify-center px-4 py-2.5 rounded-lg border border-gray-200 text-sm font-medium text-red-600 hover:bg-red-50 mt-2 transition-colors"
-          >
-            Sign out
-          </button>
-        </div>
-      </aside>
+          {isDemo && (
+            <span className="hidden items-center gap-1.5 rounded-pill bg-warning-bg px-2.5 py-1 text-[11px] font-medium text-warning sm:inline-flex">
+              <FlaskConical className="h-3.5 w-3.5" aria-hidden="true" strokeWidth={1.75} />
+              Demo mode
+            </span>
+          )}
 
-      <header className="sticky top-0 z-40 border-b border-gray-200 bg-white/95 dark:bg-gray-800/95 backdrop-blur-md md:ml-64">
-        <div className="flex items-center justify-between gap-6 px-6 py-3">
-          <button
-            onClick={() => setSidebarOpen(!sidebarOpen)}
-            className="p-2 rounded-md text-gray-400 hover:bg-gray-100 md:hidden"
-          >
-            <span className="sr-only">Open menu</span>
-            <Menu className="w-5 h-5" />
-          </button>
-          <div className="hidden md:flex flex-1 max-w-2xl">
-            <input
-              type="text"
-              placeholder="Search cases..."
-              className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-gray-50 text-sm focus:ring-2 focus:ring-paypal-600 focus:border-paypal-600 transition-colors"
+          <div role="search" className="relative mx-auto min-w-0 flex-1 md:max-w-[480px]">
+            <Search
+              className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted"
+              aria-hidden="true"
+              strokeWidth={1.75}
             />
+            <input
+              ref={inputRef}
+              type="search"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Search cases, customers or orders"
+              aria-label="Search cases, customers or orders"
+              className="h-10 w-full rounded-pill border border-line bg-surface-muted pl-9 pr-16 text-meta text-ink placeholder:text-muted transition-colors duration-150 focus:border-blue focus:outline-none [&::-webkit-search-cancel-button]:hidden"
+            />
+            {query ? (
+              <button
+                type="button"
+                onClick={() => {
+                  clear();
+                  inputRef.current?.focus();
+                }}
+                aria-label="Clear search"
+                title="Clear search"
+                className="absolute right-1.5 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-pill text-muted transition-colors hover:bg-surface hover:text-ink"
+              >
+                <X className="h-3.5 w-3.5" aria-hidden="true" />
+              </button>
+            ) : (
+              <kbd className="pointer-events-none absolute right-2.5 top-1/2 hidden -translate-y-1/2 rounded-sm border border-line bg-surface px-1.5 py-0.5 font-sans text-[11px] text-muted sm:block">
+                /
+              </kbd>
+            )}
           </div>
-          <div className="flex items-center gap-3 ml-auto">
-            <button
-              type="button"
-              onClick={toggleTheme}
+
+          <div className="flex shrink-0 items-center gap-1">
+            <IconButton
+              label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
               role="switch"
-              aria-checked={dark}
-              aria-label={dark ? 'Switch to light mode' : 'Switch to dark mode'}
-              title="Toggle dark mode"
-              className="relative flex h-8 w-[4.25rem] shrink-0 items-center rounded-full border border-gray-200 bg-gray-100 p-0.5 transition"
+              aria-checked={theme === 'dark'}
+              onClick={() => {
+                const next = theme === 'dark' ? 'light' : 'dark';
+                applyTheme(next, true);
+                setTheme(next);
+              }}
             >
-              <span
-                className={`absolute inset-y-0.5 left-0.5 w-8 rounded-full bg-white shadow-sm transition-transform duration-300 ease-out dark:bg-gray-400 ${
-                  dark ? 'translate-x-8' : 'translate-x-0'
-                }`}
-              />
-              <span
-                className={`relative z-10 flex w-8 justify-center text-sm leading-none transition-transform duration-500 ${
-                  dark ? '-rotate-180 scale-75 opacity-50' : 'rotate-0 scale-100 opacity-100'
-                }`}
+              {theme === 'dark' ? (
+                <Sun className="h-4 w-4" aria-hidden="true" strokeWidth={1.75} />
+              ) : (
+                <Moon className="h-4 w-4" aria-hidden="true" strokeWidth={1.75} />
+              )}
+            </IconButton>
+
+            <div className="relative" ref={menuRef}>
+              <button
+                type="button"
+                onClick={() => setMenuOpen((open) => !open)}
+                aria-haspopup="menu"
+                aria-expanded={menuOpen}
+                className="flex h-10 items-center gap-2 rounded-pill pl-1 pr-2 transition-colors hover:bg-surface-muted"
               >
-                ☀️
-              </span>
-              <span
-                className={`relative z-10 flex w-8 justify-center text-sm leading-none transition-transform duration-500 ${
-                  dark ? 'rotate-0 scale-100 opacity-100' : 'rotate-180 scale-75 opacity-50'
-                }`}
-              >
-                🌙
-              </span>
-            </button>
-            <span className="hidden sm:block text-sm text-gray-500">{user?.kind ?? 'Guest'}</span>
-            <div className="h-8 w-8 rounded-full bg-paypal-600 flex items-center justify-center text-white text-sm font-medium">
-              {user?.kind?.[0]?.toUpperCase() ?? 'G'}
+                <span className="flex h-8 w-8 items-center justify-center rounded-full bg-info-bg text-[12px] font-semibold text-info">
+                  {initials(displayName)}
+                </span>
+                <ChevronDown className="hidden h-3.5 w-3.5 text-muted sm:block" aria-hidden="true" />
+                <span className="sr-only">Account menu</span>
+              </button>
+
+              {menuOpen && (
+                <div
+                  role="menu"
+                  className="absolute right-0 top-full z-50 mt-2 w-64 animate-slide-up rounded-lg border border-line bg-surface p-1.5 shadow-pop"
+                >
+                  <div className="border-b border-line px-3 py-3">
+                    <p className="truncate text-body font-semibold text-ink">{displayName}</p>
+                    {email && <p className="truncate text-meta text-muted">{email}</p>}
+                    <span className="mt-2 inline-flex rounded-pill bg-info-bg px-2 py-0.5 text-[11px] font-medium text-info">
+                      {roleLabel}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      setShortcutsOpen(true);
+                    }}
+                    className="mt-1.5 flex w-full items-center gap-2 rounded-sm px-3 py-2 text-left text-body text-ink transition-colors hover:bg-surface-muted"
+                  >
+                    <Keyboard className="h-4 w-4 text-muted" aria-hidden="true" strokeWidth={1.75} />
+                    Keyboard shortcuts
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={signOut}
+                    className="flex w-full items-center gap-2 rounded-sm px-3 py-2 text-left text-body text-ink transition-colors hover:bg-surface-muted"
+                  >
+                    <LogOut className="h-4 w-4 text-muted" aria-hidden="true" strokeWidth={1.75} />
+                    Sign out
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </div>
       </header>
 
-      <main className={`pt-20 pb-8 px-4 sm:px-6 lg:px-8 md:ml-64 ${sidebarOpen ? 'ml-64' : ''}`}>
-        {children ?? <Outlet />}
-      </main>
+      <div className="flex">
+        <aside className="sticky top-16 hidden h-[calc(100vh-4rem)] w-16 shrink-0 flex-col border-r border-line bg-surface sm:flex lg:w-[232px]">
+          <nav aria-label="Main" className="flex flex-1 flex-col gap-1 p-2 lg:p-3">
+            {navItems.map((item) => {
+              const active = activePath === item.path;
+              return (
+                <Link
+                  key={item.path}
+                  to={item.path}
+                  title={item.label}
+                  aria-current={active ? 'page' : undefined}
+                  className={cn(
+                    'flex h-10 items-center gap-2.5 rounded-md px-2.5 text-body transition-colors duration-150 lg:px-3',
+                    active
+                      ? 'bg-info-bg font-medium text-blue'
+                      : 'text-muted hover:bg-surface-muted hover:text-ink',
+                  )}
+                >
+                  <item.icon
+                    className="h-5 w-5 shrink-0"
+                    aria-hidden="true"
+                    strokeWidth={1.75}
+                  />
+                  <span className="hidden truncate lg:inline">{item.label}</span>
+                </Link>
+              );
+            })}
+          </nav>
+          <p className="hidden px-4 py-4 text-[11px] leading-4 text-muted lg:block">
+            Press <kbd className="rounded-sm border border-line px-1">/</kbd> to search
+          </p>
+        </aside>
+
+        <main
+          id="main-content"
+          className="min-w-0 flex-1 px-4 pb-24 pt-6 sm:px-6 sm:pb-10 lg:px-8"
+        >
+          <div className="mx-auto w-full max-w-content">
+            <Outlet />
+          </div>
+        </main>
+      </div>
+
+      <nav
+        aria-label="Main"
+        className="fixed inset-x-0 bottom-0 z-40 flex h-16 border-t border-line bg-surface sm:hidden"
+      >
+        {navItems.map((item) => {
+          const active = activePath === item.path;
+          return (
+            <Link
+              key={item.path}
+              to={item.path}
+              aria-current={active ? 'page' : undefined}
+              className={cn(
+                'flex flex-1 flex-col items-center justify-center gap-1 text-[11px] transition-colors',
+                active ? 'font-semibold text-blue' : 'text-muted',
+              )}
+            >
+              <item.icon className="h-5 w-5" aria-hidden="true" strokeWidth={1.75} />
+              {item.label}
+            </Link>
+          );
+        })}
+      </nav>
+
+      <Dialog
+        open={shortcutsOpen}
+        onClose={() => setShortcutsOpen(false)}
+        title="Keyboard shortcuts"
+        description="Work faster without leaving the keyboard."
+        size="sm"
+      >
+        <dl className="divide-y divide-line">
+          {[
+            ['/', 'Focus search'],
+            ['g then c', 'Go to cases'],
+            ['Esc', 'Close a dialog or clear search'],
+            ['Enter', 'Send a message'],
+            ['Shift + Enter', 'Add a new line'],
+          ].map(([keys, action]) => (
+            <div key={keys} className="flex items-center justify-between gap-4 py-2.5">
+              <dt className="text-body text-ink">{action}</dt>
+              <dd>
+                <kbd className="rounded-sm border border-line bg-surface-muted px-1.5 py-0.5 font-sans text-[11px] text-muted">
+                  {keys}
+                </kbd>
+              </dd>
+            </div>
+          ))}
+        </dl>
+      </Dialog>
     </div>
+  );
+}
+
+export function Layout() {
+  return (
+    <GlobalSearchProvider>
+      <Shell />
+    </GlobalSearchProvider>
   );
 }
