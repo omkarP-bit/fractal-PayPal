@@ -1,275 +1,320 @@
-import { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, ShieldCheck, Clock, MessageCircle, FileText, AlertCircle, CreditCard } from '../../components/ui/Icons';
-import { apiClient, CustomerCaseView } from '../../services/api';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Link, useNavigate, useParams } from 'react-router-dom';
+import { ArrowLeft, Check, X } from 'lucide-react';
+import { apiClient, type CaseDetail } from '../../services/api';
 import { useAuthStore } from '../../store/auth';
 import { useSSE } from '../../hooks/useSSE';
-import { Badge } from '../../components/ui/Badge';
+import { cn } from '../../lib/cn';
+import {
+  formatAbsolute,
+  formatActor,
+  formatEventType,
+  formatMinorUnits,
+  formatTime,
+  isCustomerVisible,
+  statusMeta,
+} from '../../lib/format';
+import { Button } from '../../components/ui/Button';
+import { StatusPill } from '../../components/ui/StatusPill';
+import { Tooltip } from '../../components/ui/Tooltip';
+import { Stepper, type Step } from '../../components/ui/Stepper';
+import { Timeline, type TimelineEntry } from '../../components/ui/Timeline';
+import { ErrorNotice, Skeleton } from '../../components/ui/States';
+import { Conversation } from '../../components/Conversation';
+
+const PANEL = 'rounded-lg border border-line bg-surface';
+
+const HEADLINES: Record<string, string> = {
+  OPEN: 'We’ve opened your case.',
+  COLLECTING_EVIDENCE: 'We’re gathering the details.',
+  INVESTIGATING: 'We’re checking your payment with PayPal.',
+  AWAITING_MERCHANT_APPROVAL: 'Your merchant is reviewing the fix.',
+  ESCALATED: 'A specialist is reviewing your case.',
+  RESOLVED: 'Your payment is confirmed. Nothing else is needed.',
+  REJECTED: 'We couldn’t resolve this case.',
+  CLOSED: 'This case is closed.',
+};
+
+const SUPPORTING: Record<string, string> = {
+  OPEN: 'We’ll keep you posted here as soon as there’s an update.',
+  COLLECTING_EVIDENCE: 'We’re collecting the payment and order details we need to compare.',
+  INVESTIGATING: 'This usually takes a few minutes. You don’t need to do anything right now.',
+  AWAITING_MERCHANT_APPROVAL:
+    'Your payment is safe. We’re waiting for the merchant to approve the change.',
+  ESCALATED: 'A specialist is taking a closer look. We’ll update you here.',
+  RESOLVED: 'We matched your payment to the merchant’s order. You can keep this case for your records.',
+  REJECTED: 'There was not enough evidence to change the order. Contact your merchant if you need more help.',
+  CLOSED: 'No further action is needed. You can still read the history of this case.',
+};
+
+function WhatYouCanDo() {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (event: MouseEvent) => {
+      if (ref.current && !ref.current.contains(event.target as Node)) setOpen(false);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('mousedown', onPointerDown);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', onPointerDown);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [open]);
+
+  return (
+    <section ref={ref} className={cn(PANEL, 'relative p-4')}>
+      <h2 className="text-body font-semibold text-ink">What you can do</h2>
+      <p className="mt-1 text-meta text-muted">Read, message and add evidence.</p>
+      <Button
+        variant="tertiary"
+        size="sm"
+        className="mt-1 h-7 px-0"
+        onClick={() => setOpen((value) => !value)}
+        aria-expanded={open}
+      >
+        Learn more
+      </Button>
+      {open && (
+        <div className="absolute right-4 top-full z-30 mt-1 w-72 animate-slide-up rounded-lg border border-line bg-surface p-4 shadow-pop">
+          <p className="text-[11px] font-semibold text-success">You can</p>
+          <ul className="mt-2 space-y-1.5">
+            {['Read every update', 'Message your merchant', 'Add evidence to this case'].map((item) => (
+              <li key={item} className="flex items-start gap-2 text-meta text-ink">
+                <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-success" aria-hidden="true" />
+                {item}
+              </li>
+            ))}
+          </ul>
+          <p className="mt-4 text-[11px] font-semibold text-muted">You cannot</p>
+          <ul className="mt-2 space-y-1.5">
+            {['Approve a refund', 'Change an order total', 'Edit PolicyGuard rules'].map((item) => (
+              <li key={item} className="flex items-start gap-2 text-meta text-ink">
+                <X className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted" aria-hidden="true" />
+                {item}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </section>
+  );
+}
 
 export function CustomerCaseDetail() {
   const { id } = useParams();
-  const [caseData, setCaseData] = useState<CustomerCaseView | null>(null);
+  const navigate = useNavigate();
+  const { logout } = useAuthStore();
+  const [caseData, setCaseData] = useState<CaseDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [newMessage, setNewMessage] = useState('');
-  const { logout } = useAuthStore();
-  const navigate = useNavigate();
 
-  const fetchCase = async () => {
-    try {
-      setLoading(true);
-      const data = await apiClient.getCase(id || '');
-      setCaseData(data as CustomerCaseView);
-    } catch (err: any) {
-      setError(err.message || 'Failed to load case');
-      if (err.message.includes('401')) {
-        logout();
-        navigate('/login');
+  const fetchCase = useCallback(
+    async (quiet = false) => {
+      if (!id) return;
+      if (!quiet) setLoading(true);
+      try {
+        const data = await apiClient.getCase(id);
+        setCaseData(data);
+        setError(null);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Failed to load case';
+        setError(message);
+        if (message.includes('401')) {
+          logout();
+          navigate('/login');
+        }
+      } finally {
+        if (!quiet) setLoading(false);
       }
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleMessageEvent = (event: { type: string; case_id: string; version: number }) => {
-    fetchCase();
-  };
+    },
+    [id, logout, navigate],
+  );
 
   useEffect(() => {
-    fetchCase();
-  }, [id]);
+    void fetchCase();
+  }, [fetchCase]);
 
-  useSSE(id || '', handleMessageEvent);
+  const onCaseEvent = useCallback(() => {
+    void fetchCase(true);
+  }, [fetchCase]);
 
-  const handleSendMessage = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newMessage.trim() || !id) return;
+  useSSE(id, onCaseEvent);
 
-    try {
-      await apiClient.createCaseMessage(id, newMessage, 'SHARED');
-      setNewMessage('');
-      fetchCase();
-    } catch (err: any) {
-      setError(err.message || 'Failed to send message');
-    }
-  };
-
-  const statusColor = (status: string) => {
-    switch (status) {
-      case 'COMPLETED': return 'bg-green-50 text-green-700 border-green-200';
-      case 'PAYMENT_PENDING': return 'bg-amber-50 text-amber-700 border-amber-200';
-      case 'INVESTIGATING': return 'bg-blue-50 text-blue-700 border-blue-200';
-      case 'RESOLVED': return 'bg-green-50 text-green-700 border-green-200';
-      case 'ESCALATED': return 'bg-red-50 text-red-700 border-red-200';
-      default: return 'bg-gray-50 text-gray-700 border-gray-200';
-    }
+  const sendMessage = async (body: string) => {
+    if (!id) return;
+    await apiClient.createCaseMessage(id, body, 'SHARED');
+    await fetchCase(true);
   };
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="flex flex-col items-center gap-3">
-          <div className="w-8 h-8 border-4 border-paypal-600 border-t-transparent rounded-full animate-spin" />
-          <p className="text-gray-500 text-sm">Loading case...</p>
+      <div className="mx-auto max-w-[1040px] space-y-5">
+        <Skeleton className="h-4 w-24" />
+        <Skeleton className="h-8 w-48" />
+        <Skeleton className="h-52 w-full rounded-lg" />
+        <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_280px]">
+          <div className="space-y-5">
+            <Skeleton className="h-40 w-full rounded-lg" />
+            <Skeleton className="h-72 w-full rounded-lg" />
+          </div>
+          <div className="space-y-5">
+            <Skeleton className="h-64 w-full rounded-lg" />
+            <Skeleton className="h-28 w-full rounded-lg" />
+          </div>
         </div>
       </div>
     );
   }
 
-  if (error) {
+  if (!caseData) {
     return (
-      <div className="flex flex-col items-center justify-center h-64 text-center">
-        <div className="w-12 h-12 rounded-full bg-red-50 flex items-center justify-center">
-          <AlertCircle className="w-6 h-6 text-red-500" />
-        </div>
-        <h3 className="text-lg font-medium text-gray-900 mt-4">Error loading case</h3>
-        <p className="text-sm text-gray-600">{error}</p>
-        <button
-          onClick={() => navigate('/customer/cases')}
-          className="mt-4 btn-primary px-6 py-2"
+      <div className="mx-auto max-w-[720px] space-y-5">
+        <Link
+          to="/customer/cases"
+          className="inline-flex items-center gap-1.5 text-meta font-medium text-blue hover:underline"
         >
-          Back to Cases
-        </button>
+          <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+          Back to cases
+        </Link>
+        <ErrorNotice
+          title="We couldn’t load this case"
+          description={error || 'The case may have been removed.'}
+          onRetry={() => void fetchCase()}
+        />
       </div>
     );
   }
+
+  const status = caseData.status.toUpperCase();
+  const payment = caseData.payment;
+  const order = caseData.order;
+  const resolved = ['RESOLVED', 'CLOSED', 'REJECTED'].includes(status);
+  const currentIndex = resolved
+    ? 3
+    : status === 'COLLECTING_EVIDENCE'
+      ? 1
+      : status === 'OPEN'
+        ? 0
+        : 2;
+
+  const labels = ['Opened', 'Evidence collected', 'Investigating', status === 'REJECTED' ? 'Closed' : 'Resolved'];
+  const steps: Step[] = labels.map((label, index) => ({
+    label,
+    state: resolved ? 'complete' : index < currentIndex ? 'complete' : index === currentIndex ? 'current' : 'upcoming',
+  }));
+
+  const headline = HEADLINES[status] ?? 'We’re working on your case.';
+  const supporting = caseData.summary?.trim() || SUPPORTING[status] || 'We’ll keep you updated here.';
+
+  const timelineEntries: TimelineEntry[] =
+    (caseData.activity ?? [])
+      .filter((item) => isCustomerVisible(item.visibility))
+      .map((item) => ({
+        id: item.id,
+        time: item.created_at,
+        title: formatEventType(item.event_type),
+        actor: formatActor(item.actor_type),
+        customerVisible: true,
+        detail:
+          item.data && typeof item.data.message === 'string' ? item.data.message : undefined,
+      }));
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => navigate('/customer/cases')}
-            className="p-2 rounded-md text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
-          >
-            <ArrowLeft className="w-4 h-4" />
-          </button>
-          <div>
-            <h1 className="text-xl font-bold text-gray-900">Case {caseData.case_number}</h1>
-            <p className="text-sm text-gray-500">{caseData.status.replace('_', ' ')}</p>
-          </div>
+    <div className="mx-auto max-w-[1040px] space-y-5">
+      <div>
+        <Link
+          to="/customer/cases"
+          className="inline-flex items-center gap-1.5 text-meta font-medium text-blue hover:underline"
+        >
+          <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+          Back to cases
+        </Link>
+        <div className="mt-2 flex flex-wrap items-center gap-2.5">
+          <h1 className="text-title font-semibold text-ink">Case {caseData.case_number}</h1>
+          <span key={caseData.status} className="animate-fade-in" aria-live="polite">
+            <StatusPill meta={statusMeta(caseData.status)} />
+          </span>
         </div>
-        <span className={`badge badge-investigating`}>
-          {caseData.status.replace('_', ' ')}
-        </span>
+        <p className="mt-0.5 text-meta text-muted">
+          With {caseData.merchant?.name || 'your merchant'}. Opened{' '}
+          <Tooltip content={formatAbsolute(caseData.created_at)}>
+            <time dateTime={caseData.created_at}>{formatTime(caseData.created_at)}</time>
+          </Tooltip>
+        </p>
       </div>
 
-      <div className="card">
-        <div className="flex items-center justify-between py-4">
-          <div className="flex-1 flex items-center justify-center">
-            <div className="w-full h-0.5 bg-gray-200"></div>
-          </div>
-          <div className="w-8 h-8 rounded-full bg-paypal-600 flex items-center justify-center text-white text-sm font-medium">
-            1
-          </div>
-          <div className="flex-1 flex items-center justify-center">
-            <div className="w-full h-0.5 bg-gray-200"></div>
-          </div>
-          <div className="w-8 h-8 rounded-full bg-paypal-600 flex items-center justify-center text-white text-sm font-medium">
-            2
-          </div>
-          <div className="flex-1 flex items-center justify-center">
-            <div className="w-full h-0.5 bg-gray-200"></div>
-          </div>
-          <div className="w-8 h-8 rounded-full bg-paypal-600 flex items-center justify-center text-white text-sm font-medium">
-            3
-          </div>
-        </div>
-        <div className="flex justify-between text-xs text-gray-500 py-2">
-          <span>Opened</span>
-          <span>Evidence Collected</span>
-          <span>Investigating</span>
-          <span>Resolution</span>
-        </div>
-      </div>
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,720px)_280px] xl:items-start">
+        <div className="min-w-0 space-y-5">
+          <section className={cn(PANEL, 'p-6')}>
+            <h2 className="max-w-prose text-section font-semibold text-ink">{headline}</h2>
+            <p className="mt-1.5 max-w-prose text-body text-muted">{supporting}</p>
+            {caseData.next_step && caseData.next_step !== caseData.summary && (
+              <p className="mt-1 text-body text-muted">{caseData.next_step}</p>
+            )}
+            <div className="mt-6 border-t border-line pt-5">
+              <Stepper steps={steps} />
+            </div>
+          </section>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 space-y-6">
-          <div className="bg-white dark:bg-gray-800 border border-gray-200 rounded-lg shadow-sm p-6">
-            <div className="flex items-center gap-2 mb-4">
-              <div className="w-2 h-2 rounded-full bg-blue-500"></div>
-              <h3 className="font-medium text-gray-900">What's happening</h3>
-            </div>
-            <div className="bg-blue-50 rounded-lg p-4 border border-blue-100">
-              <p className="text-gray-800 text-sm dark:text-gray-700">{caseData.summary}</p>
-              <p className="mt-2 text-sm font-medium text-blue-800">{caseData.next_step}</p>
-            </div>
-          </div>
-
-          <div className="bg-white dark:bg-gray-800 border border-gray-200 rounded-lg shadow-sm p-6">
-            <div className="flex items-center gap-2 mb-4">
-              <CreditCard className="w-4 h-4 text-gray-500" />
-              <h3 className="font-medium text-gray-900">Payment & Order</h3>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
-                <p className="text-xs font-medium text-gray-500 uppercase">Payment (PayPal)</p>
-                <div className="flex items-baseline gap-1 mt-1">
-                  <span className="text-lg font-bold text-gray-900">${(caseData.payment.amount_minor / 100).toFixed(2)}</span>
-                  <span className="text-sm font-medium text-gray-500">{caseData.payment.currency}</span>
-                </div>
-                <div className="flex items-center gap-2 mt-2">
-                  <span className={`badge ${caseData.payment.status === 'COMPLETED' ? 'badge-resolved' : 'badge-pending'}`}>
-                    {caseData.payment.status}
-                  </span>
+          <section className={cn(PANEL, 'p-6')}>
+            <h2 className="text-section font-semibold text-ink">Payment and order</h2>
+            <div className="mt-4 grid gap-5 sm:grid-cols-2 sm:gap-0">
+              <div className="sm:pr-6">
+                <p className="text-meta text-muted">PayPal</p>
+                <p className="mt-1 text-section font-semibold tabular-nums text-ink">
+                  {payment ? formatMinorUnits(payment.amount_minor, payment.currency) : '—'}
+                </p>
+                <div className="mt-2">
+                  <StatusPill meta={statusMeta(payment?.status)} />
                 </div>
               </div>
-              <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
-                <p className="text-xs font-medium text-gray-500 uppercase">Merchant Order</p>
-                <div className="text-lg font-bold text-gray-900 mt-1">{caseData.order.ref}</div>
-                <div className="flex items-center gap-2 mt-2">
-                  <span className={`badge badge-pending ${caseData.order.status === 'PAYMENT_PENDING' ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-green-50 text-green-700 border-green-200'}`}>
-                    {caseData.order.status}
-                  </span>
+              <div className="border-t border-line pt-5 sm:border-l sm:border-t-0 sm:pl-6 sm:pt-0">
+                <p className="text-meta text-muted">Store order</p>
+                <p className="mt-1 break-all font-mono text-[18px] font-semibold text-ink">
+                  {order?.ref ?? '—'}
+                </p>
+                <div className="mt-2">
+                  <StatusPill meta={statusMeta(order?.status)} />
                 </div>
               </div>
             </div>
-          </div>
+          </section>
+
+          <section className={cn(PANEL, 'p-6')}>
+            <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+              <h2 className="text-section font-semibold text-ink">Conversation</h2>
+              <p className="text-[12px] text-muted">Messages are shared with your merchant.</p>
+            </div>
+            <Conversation
+              messages={caseData.messages ?? []}
+              perspective="customer"
+              onSend={sendMessage}
+              emptyText="No messages yet. Ask a question or share what happened."
+            />
+          </section>
         </div>
 
-        <div className="lg:col-span-1 space-y-6">
-          <div className="bg-white dark:bg-gray-800 border border-gray-200 rounded-lg shadow-sm p-6">
-            <h3 className="font-medium text-gray-900 mb-4">Case Timeline</h3>
-            <div className="space-y-4">
-              {[
-                { time: '10:02', text: 'Case opened', type: 'C' },
-                { time: '10:02', text: 'Payment confirmed', type: 'S' },
-                { time: '10:03', text: 'Merchant notified', type: 'M' },
-                { time: '10:04', text: 'Investigation started', type: 'S' },
-              ].map((item, idx) => (
-                <div key={idx} className="flex items-start gap-3 relative">
-                  <div className="relative">
-                    <div className={`w-2.5 h-2.5 rounded-full ${getDotColor(item.type)} absolute left-1/2 top-1/2 -mt-1`} />
-                    <div className="absolute left-1/2 top-2.5 bottom-2 w-0.5 bg-gray-200" />
-                  </div>
-                  <div className="text-xs text-gray-500">{item.time}</div>
-                  <div className="text-sm text-gray-700">{item.text}</div>
-                </div>
-              ))}
+        <aside className="min-w-0 space-y-5">
+          <section className={cn(PANEL, 'p-4')}>
+            <h2 className="text-body font-semibold text-ink">Case timeline</h2>
+            <div className="mt-4">
+              <Timeline
+                entries={timelineEntries}
+                showMerchantOnly={false}
+                emptyText="Updates will appear here as your case moves forward."
+              />
             </div>
-          </div>
+          </section>
 
-          <div className="bg-white dark:bg-gray-800 border border-gray-200 rounded-lg shadow-sm p-6">
-            <h3 className="font-medium text-gray-900 mb-4">Your Access</h3>
-            <div className="space-y-3">
-              <div className="flex items-center gap-2 p-2 rounded-lg bg-blue-50 border border-blue-100">
-                <span className="text-xs text-blue-600 font-medium">Can:</span>
-                <span className="text-sm text-gray-700">Read, message, add evidence</span>
-              </div>
-              <div className="flex items-center gap-2 p-2 rounded-lg bg-gray-50 border border-gray-200">
-                <span className="text-xs text-gray-500 font-medium">Cannot:</span>
-                <span className="text-sm text-gray-600">Approve, refund</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div className="bg-white dark:bg-gray-800 border border-gray-200 rounded-lg shadow-sm p-6">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="font-medium text-gray-900">Conversation</h3>
-          <span className="text-xs text-gray-500">Shared conversation</span>
-        </div>
-        <div className="space-y-3 max-h-96 overflow-y-auto pr-2">
-          <div className="flex flex-col">
-            <div className="text-xs text-gray-400 mb-1">You • 10:02</div>
-            <div className="bg-paypal-50 rounded-lg p-3 text-sm text-gray-800 dark:text-gray-700 max-w-[80%]">
-              I was charged but the store says unpaid.
-            </div>
-          </div>
-          <div className="flex flex-col">
-            <div className="text-xs text-gray-400 mb-1 text-right">Merchant • 10:06</div>
-            <div className="bg-gray-100 rounded-lg p-3 text-sm text-gray-800 dark:text-gray-700 max-w-[80%] ml-auto">
-              We are checking your payment with our provider.
-            </div>
-          </div>
-        </div>
-        <form onSubmit={handleSendMessage} className="mt-4 flex gap-2">
-          <input
-            type="text"
-            value={newMessage}
-            onChange={(e) => setNewMessage(e.target.value)}
-            placeholder="Write a message..."
-            className="input-field w-full flex-1"
-          />
-          <button
-            type="submit"
-            disabled={!newMessage.trim() || loading}
-            className="btn-primary px-4"
-          >
-            Send
-          </button>
-        </form>
-        <button className="mt-3 w-full flex items-center justify-center gap-2 text-sm text-paypal-600 font-medium py-2 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors dark:text-paypal-300">
-          <FileText className="w-3 h-3" /> Add Evidence
-        </button>
+          <WhatYouCanDo />
+        </aside>
       </div>
     </div>
   );
 }
-
-const getDotColor = (type: string) => {
-  if (type === 'C') return 'bg-gray-400';
-  if (type === 'M') return 'bg-blue-500';
-  return 'bg-green-500';
-};
