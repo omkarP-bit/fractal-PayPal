@@ -34,7 +34,7 @@ import {
   statusMeta,
 } from '../../lib/format';
 import { Button, IconButton } from '../../components/ui/Button';
-import { StatusPill, Tag } from '../../components/ui/StatusPill';
+import { StatusPill, Tag, TONE_SURFACE } from '../../components/ui/StatusPill';
 import { CopyChip } from '../../components/ui/CopyChip';
 import { Tooltip } from '../../components/ui/Tooltip';
 import { Disclosure } from '../../components/ui/Disclosure';
@@ -43,7 +43,7 @@ import { ErrorNotice, Skeleton } from '../../components/ui/States';
 import { Timeline, type TimelineEntry } from '../../components/ui/Timeline';
 import { Conversation } from '../../components/Conversation';
 
-const PANEL = 'rounded-lg border border-line bg-surface';
+const PANEL = 'panel';
 
 function PermissionsCard() {
   const [open, setOpen] = useState(false);
@@ -66,10 +66,10 @@ function PermissionsCard() {
   }, [open]);
 
   return (
-    <section ref={ref} className={cn(PANEL, 'relative p-4')}>
+    <section ref={ref} className={cn(PANEL, 'relative p-5')}>
       <div className="flex items-center justify-between gap-3">
         <div>
-          <h2 className="text-body font-semibold text-ink">Your access</h2>
+          <h2 className="text-body font-bold text-ink">Your access</h2>
           <p className="mt-0.5 text-meta text-muted">Admin access</p>
         </div>
         <Button
@@ -82,8 +82,8 @@ function PermissionsCard() {
         </Button>
       </div>
       {open && (
-        <div className="absolute right-4 top-full z-30 mt-1 w-72 animate-slide-up rounded-lg border border-line bg-surface p-4 shadow-pop">
-          <p className="text-[11px] font-semibold text-success">Can</p>
+        <div className="absolute right-4 top-full z-30 mt-2 w-72 animate-slide-up rounded border-2 border-line bg-surface p-4 shadow-hard-lg">
+          <p className="text-[11px] font-bold uppercase tracking-[0.04em] text-muted">Can</p>
           <ul className="mt-2 space-y-1.5">
             {[
               'Reconcile orders',
@@ -91,16 +91,16 @@ function PermissionsCard() {
               'See the risk score for this case',
             ].map((item) => (
               <li key={item} className="flex items-start gap-2 text-meta text-ink">
-                <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-success" aria-hidden="true" />
+                <Check className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" strokeWidth={3} />
                 {item}
               </li>
             ))}
           </ul>
-          <p className="mt-4 text-[11px] font-semibold text-muted">Cannot</p>
+          <p className="mt-4 text-[11px] font-bold uppercase tracking-[0.04em] text-muted">Cannot</p>
           <ul className="mt-2 space-y-1.5">
             {['Edit PolicyGuard rules', 'See cases from other merchants'].map((item) => (
               <li key={item} className="flex items-start gap-2 text-meta text-ink">
-                <X className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted" aria-hidden="true" />
+                <X className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted" aria-hidden="true" strokeWidth={3} />
                 {item}
               </li>
             ))}
@@ -243,13 +243,13 @@ export function MerchantCaseDetail() {
         </div>
         <div className="page-grid">
           <div className="page-grid-main space-y-5">
-            <Skeleton className="h-64 w-full rounded-lg" />
-            <Skeleton className="h-56 w-full rounded-lg" />
-            <Skeleton className="h-40 w-full rounded-lg" />
+            <Skeleton className="h-64 w-full rounded" />
+            <Skeleton className="h-56 w-full rounded" />
+            <Skeleton className="h-40 w-full rounded" />
           </div>
           <div className="page-grid-side space-y-5">
-            <Skeleton className="h-80 w-full rounded-lg" />
-            <Skeleton className="h-24 w-full rounded-lg" />
+            <Skeleton className="h-80 w-full rounded" />
+            <Skeleton className="h-24 w-full rounded" />
           </div>
         </div>
       </div>
@@ -341,7 +341,7 @@ export function MerchantCaseDetail() {
         <div className="mt-2 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2.5">
-              <h1 className="text-title font-semibold text-ink">Case {caseData.case_number}</h1>
+              <h1 className="text-title font-extrabold text-ink">Case {caseData.case_number}</h1>
               <span key={caseData.status} className="animate-fade-in" aria-live="polite">
                 <StatusPill meta={statusMeta(caseData.status)} />
               </span>
@@ -396,24 +396,24 @@ export function MerchantCaseDetail() {
               {menuOpen && (
                 <div
                   role="menu"
-                  className="absolute right-0 top-full z-50 mt-1 w-56 animate-slide-up rounded-lg border border-line bg-surface p-1.5 shadow-pop"
+                  className="absolute right-0 top-full z-50 mt-2 w-60 animate-slide-up rounded border-2 border-line bg-surface p-1.5 shadow-hard-lg"
                 >
                   <button
                     type="button"
                     role="menuitem"
                     onClick={() => void copyText(window.location.href, 'Case link copied')}
-                    className="flex w-full items-center gap-2 rounded-sm px-3 py-2 text-left text-body text-ink transition-colors hover:bg-surface-muted"
+                    className="flex w-full items-center gap-2 rounded px-3 py-2.5 text-left text-body font-medium text-ink transition-colors hover:bg-surface-alt"
                   >
-                    <Link2 className="h-4 w-4 text-muted" aria-hidden="true" strokeWidth={1.75} />
+                    <Link2 className="h-4 w-4 text-ink" aria-hidden="true" strokeWidth={2} />
                     Copy case link
                   </button>
                   <button
                     type="button"
                     role="menuitem"
                     onClick={() => void copyText(caseData.id, 'Case ID copied')}
-                    className="flex w-full items-center gap-2 rounded-sm px-3 py-2 text-left text-body text-ink transition-colors hover:bg-surface-muted"
+                    className="flex w-full items-center gap-2 rounded px-3 py-2.5 text-left text-body font-medium text-ink transition-colors hover:bg-surface-alt"
                   >
-                    <Hash className="h-4 w-4 text-muted" aria-hidden="true" strokeWidth={1.75} />
+                    <Hash className="h-4 w-4 text-ink" aria-hidden="true" strokeWidth={2} />
                     Copy case ID
                   </button>
                 </div>
@@ -426,8 +426,9 @@ export function MerchantCaseDetail() {
       <div className="page-grid">
         <div className="page-grid-main space-y-5">
           {/* Payment vs order */}
-          <section className={cn(PANEL, 'p-6')}>
-            <div className="mb-4 flex justify-center">
+          <section className={cn(PANEL, 'overflow-hidden p-0')}>
+            <div className="rail-head flex flex-wrap items-center justify-between gap-2">
+              <h2 className="text-section font-bold">Payment vs order</h2>
               <StatusPill
                 meta={{
                   label: inSync ? 'In sync' : 'Out of sync',
@@ -435,105 +436,110 @@ export function MerchantCaseDetail() {
                 }}
               />
             </div>
-            <div className="grid gap-6 sm:grid-cols-2 sm:gap-0">
-              <div className="sm:pr-6">
-                <p className="text-meta text-muted">PayPal</p>
-                <p className="mt-1 text-hero font-semibold tabular-nums text-ink">
-                  {payment ? formatMinorUnits(payment.amount_minor, payment.currency) : '—'}
-                </p>
-                <div className="mt-2">
-                  <StatusPill meta={statusMeta(payment?.status)} />
+            <div className="cq">
+              <div className="split-panel">
+                <div className="p-5">
+                  <p className="section-tag text-muted">PayPal</p>
+                  <p className="mt-1 text-hero font-extrabold tabular-nums text-ink">
+                    {payment ? formatMinorUnits(payment.amount_minor, payment.currency) : '—'}
+                  </p>
+                  <div className="mt-2">
+                    <StatusPill meta={statusMeta(payment?.status)} />
+                  </div>
+
+                  <dl className="mt-4 space-y-2.5 border-t-2 border-line pt-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <dt className="text-meta text-muted">Provider order</dt>
+                      <dd>
+                        {provider?.order_id ? (
+                          <CopyChip value={provider.order_id} title="Copy provider order ID" />
+                        ) : (
+                          <span className="text-meta text-muted">—</span>
+                        )}
+                      </dd>
+                    </div>
+                    <div className="flex items-center justify-between gap-3">
+                      <dt className="text-meta text-muted">Capture</dt>
+                      <dd>
+                        {provider?.capture_id ? (
+                          <CopyChip value={provider.capture_id} title="Copy capture ID" />
+                        ) : (
+                          <span className="text-meta text-muted">—</span>
+                        )}
+                      </dd>
+                    </div>
+                    <div className="flex items-center justify-between gap-3">
+                      <dt className="text-meta text-muted">Captured</dt>
+                      <dd className="font-mono text-[12px] text-ink">
+                        {provider?.fetched_at ? formatAbsolute(provider.fetched_at) : '—'}
+                      </dd>
+                    </div>
+                  </dl>
                 </div>
 
-                <dl className="mt-4 space-y-2.5 border-t border-line pt-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <dt className="text-meta text-muted">Provider order</dt>
-                    <dd>
-                      {provider?.order_id ? (
-                        <CopyChip value={provider.order_id} title="Copy provider order ID" />
-                      ) : (
-                        <span className="text-meta text-muted">—</span>
-                      )}
-                    </dd>
-                  </div>
-                  <div className="flex items-center justify-between gap-3">
-                    <dt className="text-meta text-muted">Capture</dt>
-                    <dd>
-                      {provider?.capture_id ? (
-                        <CopyChip value={provider.capture_id} title="Copy capture ID" />
-                      ) : (
-                        <span className="text-meta text-muted">—</span>
-                      )}
-                    </dd>
-                  </div>
-                  <div className="flex items-center justify-between gap-3">
-                    <dt className="text-meta text-muted">Captured</dt>
-                    <dd className="text-meta text-ink">
-                      {provider?.fetched_at ? formatAbsolute(provider.fetched_at) : '—'}
-                    </dd>
-                  </div>
-                </dl>
-              </div>
-
-              <div className="border-t border-line pt-6 sm:border-l sm:border-t-0 sm:pl-6 sm:pt-0">
-                <p className="text-meta text-muted">Your store</p>
-                <p className="mt-1 break-all font-mono text-[18px] font-semibold text-ink sm:text-[20px]">
-                  {order?.ref ?? '—'}
-                </p>
-                <div
-                  className={cn(
-                    'mt-2 w-fit rounded-sm',
-                    statusesDiffer && 'bg-warning-bg px-2 py-1',
-                  )}
-                >
-                  <StatusPill meta={statusMeta(order?.status)} />
-                </div>
-
-                <dl className="mt-4 space-y-2.5 border-t border-line pt-3">
+                <div className="p-5">
+                  <p className="section-tag text-muted">Your store</p>
+                  <p className="mt-1 break-all font-mono text-[18px] font-bold text-ink sm:text-[20px]">
+                    {order?.ref ?? '—'}
+                  </p>
                   <div
                     className={cn(
-                      'flex items-center justify-between gap-3 rounded-sm',
-                      amountsDiffer && 'bg-warning-bg px-2 py-1',
+                      'mt-2 w-fit',
+                      statusesDiffer && 'rounded-pill border-2 border-line bg-warning px-2 py-1',
                     )}
                   >
-                    <dt className="text-meta text-muted">Order total</dt>
-                    <dd className="text-meta font-medium tabular-nums text-ink">
-                      {order && order.amount_minor > 0
-                        ? formatMinorUnits(order.amount_minor, order.currency)
-                        : '—'}
-                    </dd>
+                    <StatusPill meta={statusMeta(order?.status)} />
                   </div>
-                  <div className="flex items-center justify-between gap-3">
-                    <dt className="text-meta text-muted">Last updated</dt>
-                    <dd className="text-meta text-ink">
-                      {order?.fetched_at ? (
-                        <Tooltip content={formatAbsolute(order.fetched_at)} side="left">
-                          <time dateTime={order.fetched_at}>{formatTime(order.fetched_at)}</time>
-                        </Tooltip>
-                      ) : (
-                        '—'
+
+                  <dl className="mt-4 space-y-2.5 border-t-2 border-line pt-3">
+                    <div
+                      className={cn(
+                        'flex items-center justify-between gap-3',
+                        amountsDiffer &&
+                          'rounded-pill border-2 border-line bg-warning px-2 py-1 text-[color:var(--warning-ink)]',
                       )}
-                    </dd>
-                  </div>
-                </dl>
+                    >
+                      <dt className={cn('text-meta', amountsDiffer ? 'font-bold' : 'text-muted')}>
+                        Order total
+                      </dt>
+                      <dd className="text-meta font-bold tabular-nums text-ink">
+                        {order && order.amount_minor > 0
+                          ? formatMinorUnits(order.amount_minor, order.currency)
+                          : '—'}
+                      </dd>
+                    </div>
+                    <div className="flex items-center justify-between gap-3">
+                      <dt className="text-meta text-muted">Last updated</dt>
+                      <dd className="font-mono text-[12px] text-ink">
+                        {order?.fetched_at ? (
+                          <Tooltip content={formatAbsolute(order.fetched_at)} side="left">
+                            <time dateTime={order.fetched_at}>{formatTime(order.fetched_at)}</time>
+                          </Tooltip>
+                        ) : (
+                          '—'
+                        )}
+                      </dd>
+                    </div>
+                  </dl>
+                </div>
               </div>
             </div>
           </section>
 
           {/* AI investigation */}
-          <section className={cn(PANEL, 'p-6')}>
-            <div className="flex flex-wrap items-start justify-between gap-3">
+          <section className={cn(PANEL, 'overflow-hidden p-0')}>
+            <div className="rail-head flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2">
-                <Sparkles className="h-4 w-4 text-info" aria-hidden="true" strokeWidth={1.75} />
-                <h2 className="text-section font-semibold text-ink">AI investigation</h2>
+                <Sparkles className="h-4 w-4" aria-hidden="true" strokeWidth={2.5} />
+                <h2 className="text-section font-bold">AI investigation</h2>
                 <Tag tone="neutral">Advisory</Tag>
               </div>
               {investigation && <StatusPill meta={formatRisk(investigation.suggested_severity)} />}
             </div>
 
             {investigation ? (
-              <div className="mt-4">
-                <p className="text-body font-medium text-ink">
+              <div className="p-5">
+                <p className="text-body font-bold text-ink">
                   {formatCategory(investigation.category)}
                 </p>
                 <p className="mt-1.5 max-w-prose text-body text-muted">
@@ -541,7 +547,7 @@ export function MerchantCaseDetail() {
                 </p>
 
                 {evidenceCount > 0 && (
-                  <div className="mt-4 border-t border-line pt-3">
+                  <div className="mt-4 border-t-2 border-line pt-3">
                     <Disclosure
                       title="Evidence"
                       meta={`${evidenceCount} ${evidenceCount === 1 ? 'item' : 'items'}, ${validation.label.toLowerCase()}`}
@@ -559,12 +565,12 @@ export function MerchantCaseDetail() {
                         ).map((item) => (
                           <li
                             key={item.id}
-                            className="flex items-center justify-between gap-3 rounded-sm bg-surface-muted px-2.5 py-1.5"
+                            className="flex items-center justify-between gap-3 rounded-pill border-2 border-line bg-surface-alt px-2.5 py-1.5"
                           >
-                            <span className="min-w-0 truncate text-meta text-ink">
+                            <span className="min-w-0 truncate text-meta font-medium text-ink">
                               {sentenceCase(item.evidence_type)}
                               {item.source_system && (
-                                <span className="ml-1.5 text-[11px] text-muted">
+                                <span className="ml-1.5 font-mono text-[11px] text-muted">
                                   {sentenceCase(item.source_system)}
                                 </span>
                               )}
@@ -582,7 +588,7 @@ export function MerchantCaseDetail() {
                 </p>
               </div>
             ) : (
-              <p className="mt-4 text-body text-muted">
+              <p className="p-5 text-body text-muted">
                 No AI investigation has been recorded for this case yet. You can still reconcile —
                 PolicyGuard checks every action.
               </p>
@@ -590,136 +596,156 @@ export function MerchantCaseDetail() {
           </section>
 
           {/* PolicyGuard */}
-          <section className={cn(PANEL, 'p-6')}>
-            <div className="flex flex-wrap items-start justify-between gap-3">
+          <section className={cn(PANEL, 'overflow-hidden p-0')}>
+            <div className="rail-head flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2">
-                <ShieldCheck className="h-4 w-4 text-success" aria-hidden="true" strokeWidth={1.75} />
-                <h2 className="text-section font-semibold text-ink">PolicyGuard decision</h2>
+                <ShieldCheck className="h-4 w-4" aria-hidden="true" strokeWidth={2.5} />
+                <h2 className="text-section font-bold">PolicyGuard decision</h2>
               </div>
               {decision && (
                 <span key={decision.id} className="animate-fade-in">
-                  <StatusPill
-                    meta={decisionMeta}
-                    className="h-8 px-3 text-body"
-                  />
+                  <StatusPill meta={decisionMeta} />
                 </span>
               )}
             </div>
 
-            {reconcileError && (
-              <ErrorNotice
-                className="mt-4"
-                title="We couldn’t reconcile this order"
-                description={reconcileError}
-                onRetry={() => void performReconcile()}
-              />
-            )}
+            <div className="p-5">
+              {reconcileError && (
+                <ErrorNotice
+                  className="mb-4"
+                  title="We couldn’t reconcile this order"
+                  description={reconcileError}
+                  onRetry={() => void performReconcile()}
+                />
+              )}
 
-            {decision ? (
-              <div className="mt-4">
-                <p className="max-w-prose text-body text-ink">{decisionReason}</p>
-                <dl className="mt-3 flex flex-wrap gap-x-8 gap-y-2 border-t border-line pt-3">
-                  <div>
-                    <dt className="text-[11px] text-muted">Rule</dt>
-                    <dd className="font-mono text-[12px] text-ink">
-                      {matchedFinding?.rule_id || matchedFinding?.code || '—'}
-                    </dd>
+              {decision ? (
+                <div>
+                  <div
+                    className={cn(
+                      'rounded border-2 border-line p-4 shadow-hard',
+                      TONE_SURFACE[decisionMeta.tone],
+                    )}
+                  >
+                    <p className="text-[11px] font-bold uppercase tracking-[0.04em] opacity-80">
+                      Outcome
+                    </p>
+                    <p className="text-section font-extrabold">{decisionMeta.label}</p>
+                    <p className="mt-1 text-body font-medium">{decisionReason}</p>
                   </div>
-                  <div>
-                    <dt className="text-[11px] text-muted">Policy revision</dt>
-                    <dd className="font-mono text-[12px] text-ink">
-                      {decision.policy_revision || '—'}
-                    </dd>
-                  </div>
-                  {decision.created_at && (
+
+                  <dl className="mt-4 flex flex-wrap gap-x-8 gap-y-2 border-t-2 border-line pt-3">
                     <div>
-                      <dt className="text-[11px] text-muted">Decided</dt>
-                      <dd className="text-[12px] text-ink">
-                        <Tooltip content={formatAbsolute(decision.created_at)} side="left">
-                          <time dateTime={decision.created_at}>
-                            {formatTime(decision.created_at)}
-                          </time>
-                        </Tooltip>
+                      <dt className="text-[11px] font-bold uppercase tracking-[0.04em] text-muted">
+                        Rule
+                      </dt>
+                      <dd className="font-mono text-[12px] text-ink">
+                        {matchedFinding?.rule_id || matchedFinding?.code || '—'}
                       </dd>
                     </div>
-                  )}
-                </dl>
+                    <div>
+                      <dt className="text-[11px] font-bold uppercase tracking-[0.04em] text-muted">
+                        Policy revision
+                      </dt>
+                      <dd className="font-mono text-[12px] text-ink">
+                        {decision.policy_revision || '—'}
+                      </dd>
+                    </div>
+                    {decision.created_at && (
+                      <div>
+                        <dt className="text-[11px] font-bold uppercase tracking-[0.04em] text-muted">
+                          Decided
+                        </dt>
+                        <dd className="font-mono text-[12px] text-ink">
+                          <Tooltip content={formatAbsolute(decision.created_at)} side="left">
+                            <time dateTime={decision.created_at}>
+                              {formatTime(decision.created_at)}
+                            </time>
+                          </Tooltip>
+                        </dd>
+                      </div>
+                    )}
+                  </dl>
 
-                {decision.findings?.length > 0 && (
-                  <div className="mt-4 border-t border-line pt-3">
-                    <p className="text-meta font-medium text-ink">Checks</p>
-                    <ul className="mt-2 space-y-1.5">
-                      {decision.findings.map((finding, index) => (
-                        <li
-                          key={`${finding.rule_id ?? finding.code ?? 'check'}-${index}`}
-                          className="flex items-start gap-2 text-meta"
-                        >
-                          {finding.passed === false ? (
-                            <X className="mt-0.5 h-3.5 w-3.5 shrink-0 text-danger" aria-hidden="true" />
-                          ) : (
-                            <Check
-                              className="mt-0.5 h-3.5 w-3.5 shrink-0 text-success"
-                              aria-hidden="true"
-                            />
-                          )}
-                          <span className="min-w-0 flex-1 text-ink">
-                            {finding.message || sentenceCase(finding.code || finding.rule_id || 'Check')}
-                          </span>
-                          {(finding.rule_id || finding.code) && (
-                            <span className="hidden shrink-0 font-mono text-[11px] text-muted sm:inline">
-                              {finding.rule_id || finding.code}
+                  {decision.findings?.length > 0 && (
+                    <div className="mt-4 border-t-2 border-line pt-3">
+                      <p className="text-meta font-bold text-ink">Checks</p>
+                      <ul className="mt-2 space-y-1.5">
+                        {decision.findings.map((finding, index) => (
+                          <li
+                            key={`${finding.rule_id ?? finding.code ?? 'check'}-${index}`}
+                            className="flex items-start gap-2 text-meta"
+                          >
+                            {finding.passed === false ? (
+                              <X className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[color:var(--danger-text)]" aria-hidden="true" strokeWidth={3} />
+                            ) : (
+                              <Check
+                                className="mt-0.5 h-3.5 w-3.5 shrink-0 text-ink"
+                                aria-hidden="true"
+                                strokeWidth={3}
+                              />
+                            )}
+                            <span className="min-w-0 flex-1 text-ink">
+                              {finding.message || sentenceCase(finding.code || finding.rule_id || 'Check')}
                             </span>
-                          )}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
+                            {(finding.rule_id || finding.code) && (
+                              <span className="hidden shrink-0 font-mono text-[11px] text-muted sm:inline">
+                                {finding.rule_id || finding.code}
+                              </span>
+                            )}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
 
-                {(caseData.pending_approvals ?? []).length > 0 && (
-                  <div className="mt-4 rounded-md bg-warning-bg p-3">
-                    <p className="text-meta font-medium text-warning">Approval required</p>
-                    <ul className="mt-1 space-y-1">
-                      {caseData.pending_approvals.map((approval) => (
-                        <li key={approval.id} className="text-meta text-ink">
-                          {sentenceCase(approval.action_type)}
-                          <span className="ml-1.5 text-[11px] text-muted">
-                            expires {formatTime(approval.expires_at)}
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
-                    <p className="mt-1.5 text-[11px] text-muted">
-                      Requests are read-only here. Use your approvals workflow to decide.
+                  {(caseData.pending_approvals ?? []).length > 0 && (
+                    <div className="mt-4 rounded border-2 border-line bg-warning p-3 text-[color:var(--warning-ink)]">
+                      <p className="text-meta font-bold uppercase tracking-[0.04em]">Approval required</p>
+                      <ul className="mt-1 space-y-1">
+                        {caseData.pending_approvals.map((approval) => (
+                          <li key={approval.id} className="text-meta font-medium">
+                            {sentenceCase(approval.action_type)}
+                            <span className="ml-1.5 font-mono text-[11px]">
+                              expires {formatTime(approval.expires_at)}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                      <p className="mt-1.5 text-[11px] font-medium">
+                        Requests are read-only here. Use your approvals workflow to decide.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="rounded border-2 border-dashed border-line p-4">
+                  <p className="text-body font-medium text-ink">No policy decision yet.</p>
+                  {canReconcile ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setReconcileError(null);
+                        setConfirmOpen(true);
+                      }}
+                      className="mt-1 text-body font-bold text-blue underline-offset-4 hover:underline"
+                    >
+                      Reconcile to check this case against your policy.
+                    </button>
+                  ) : (
+                    <p className="mt-1 text-body text-muted">
+                      Reconciling is not available for this case.
                     </p>
-                  </div>
-                )}
-              </div>
-            ) : (
-              <p className="mt-4 text-body text-muted">
-                No policy decision yet.{' '}
-                {canReconcile ? (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setReconcileError(null);
-                      setConfirmOpen(true);
-                    }}
-                    className="font-medium text-blue hover:underline"
-                  >
-                    Reconcile to check this case against your policy.
-                  </button>
-                ) : (
-                  'Reconciling is not available for this case.'
-                )}
-              </p>
-            )}
+                  )}
+                </div>
+              )}
+            </div>
           </section>
 
           {/* Conversation */}
           <section className={cn(PANEL, 'p-6')}>
             <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
-              <h2 className="text-section font-semibold text-ink">Conversation</h2>
+              <h2 className="text-section font-bold text-ink">Conversation</h2>
               <p className="text-[12px] text-muted">Messages are shared with the customer.</p>
             </div>
             <Conversation
@@ -732,18 +758,18 @@ export function MerchantCaseDetail() {
         </div>
 
         <aside className="page-grid-side space-y-5">
-          <section className={cn(PANEL, 'p-4')}>
+          <section className={cn(PANEL, 'p-5')}>
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-2">
-                <History className="h-4 w-4 text-muted" aria-hidden="true" strokeWidth={1.75} />
-                <h2 className="text-body font-semibold text-ink">Activity</h2>
+                <History className="h-4 w-4 text-ink" aria-hidden="true" strokeWidth={2} />
+                <h2 className="text-body font-bold text-ink">Activity</h2>
               </div>
-              <label className="flex cursor-pointer items-center gap-1.5 text-[11px] text-muted">
+              <label className="flex min-h-[32px] cursor-pointer items-center gap-1.5 text-[11px] font-bold text-muted">
                 <input
                   type="checkbox"
                   checked={showMerchantOnly}
                   onChange={(event) => setShowMerchantOnly(event.target.checked)}
-                  className="h-3.5 w-3.5 accent-blue"
+                  className="h-4 w-4 accent-[color:var(--brand-blue)]"
                 />
                 Show merchant-only
               </label>
@@ -760,21 +786,21 @@ export function MerchantCaseDetail() {
           <PermissionsCard />
 
           {caseData.anomaly && (
-            <section className={cn(PANEL, 'p-4')}>
+            <section className={cn(PANEL, 'p-5')}>
               <div className="flex items-center justify-between gap-3">
-                <h2 className="text-body font-semibold text-ink">Operational anomaly</h2>
+                <h2 className="text-body font-bold text-ink">Operational anomaly</h2>
                 <StatusPill
                   meta={anomalyMeta(caseData.anomaly.score, caseData.anomaly.threshold)}
                   size="sm"
                 />
               </div>
-              <p className="mt-3 text-hero font-semibold tabular-nums text-ink">
+              <p className="mt-3 text-hero font-extrabold tabular-nums text-ink">
                 {caseData.anomaly.score.toFixed(2)}
               </p>
-              <p className="text-[11px] text-muted">
+              <p className="font-mono text-[11px] text-muted">
                 Threshold {caseData.anomaly.threshold.toFixed(2)}
               </p>
-              <dl className="mt-3 space-y-1.5 border-t border-line pt-3 text-meta">
+              <dl className="mt-3 space-y-1.5 border-t-2 border-line pt-3 text-meta">
                 {caseData.anomaly.features?.webhook_retry_count != null && (
                   <div className="flex items-center justify-between gap-3">
                     <dt className="text-muted">Webhook retries</dt>

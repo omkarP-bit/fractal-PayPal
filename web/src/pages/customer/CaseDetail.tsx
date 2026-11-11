@@ -22,7 +22,7 @@ import { Timeline, type TimelineEntry } from '../../components/ui/Timeline';
 import { ErrorNotice, Skeleton } from '../../components/ui/States';
 import { Conversation } from '../../components/Conversation';
 
-const PANEL = 'rounded-lg border border-line bg-surface';
+const PANEL = 'panel';
 
 const HEADLINES: Record<string, string> = {
   OPEN: 'We’ve opened your case.',
@@ -68,34 +68,36 @@ function WhatYouCanDo() {
   }, [open]);
 
   return (
-    <section ref={ref} className={cn(PANEL, 'relative p-4')}>
-      <h2 className="text-body font-semibold text-ink">What you can do</h2>
+    <section ref={ref} className={cn(PANEL, 'relative p-5')}>
+      <h2 className="text-body font-bold text-ink">What you can do</h2>
       <p className="mt-1 text-meta text-muted">Read, message and add evidence.</p>
       <Button
         variant="tertiary"
         size="sm"
-        className="mt-1 h-7 px-0"
+        className="mt-1 h-8 px-0"
         onClick={() => setOpen((value) => !value)}
         aria-expanded={open}
       >
         Learn more
       </Button>
       {open && (
-        <div className="absolute right-4 top-full z-30 mt-1 w-72 animate-slide-up rounded-lg border border-line bg-surface p-4 shadow-pop">
-          <p className="text-[11px] font-semibold text-success">You can</p>
+        <div className="absolute right-4 top-full z-30 mt-2 w-72 animate-slide-up rounded border-2 border-line bg-surface p-4 shadow-hard-lg">
+          <p className="text-[11px] font-bold uppercase tracking-[0.04em] text-muted">
+            You can
+          </p>
           <ul className="mt-2 space-y-1.5">
             {['Read every update', 'Message your merchant', 'Add evidence to this case'].map((item) => (
               <li key={item} className="flex items-start gap-2 text-meta text-ink">
-                <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-success" aria-hidden="true" />
+                <Check className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" strokeWidth={3} />
                 {item}
               </li>
             ))}
           </ul>
-          <p className="mt-4 text-[11px] font-semibold text-muted">You cannot</p>
+          <p className="mt-4 text-[11px] font-bold uppercase tracking-[0.04em] text-muted">You cannot</p>
           <ul className="mt-2 space-y-1.5">
             {['Approve a refund', 'Change an order total', 'Edit PolicyGuard rules'].map((item) => (
               <li key={item} className="flex items-start gap-2 text-meta text-ink">
-                <X className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted" aria-hidden="true" />
+                <X className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted" aria-hidden="true" strokeWidth={3} />
                 {item}
               </li>
             ))}
@@ -157,15 +159,15 @@ export function CustomerCaseDetail() {
       <div className="space-y-5">
         <Skeleton className="h-4 w-24" />
         <Skeleton className="h-8 w-48" />
-        <Skeleton className="h-52 w-full rounded-lg" />
+        <Skeleton className="h-52 w-full rounded" />
         <div className="page-grid">
           <div className="page-grid-main space-y-5">
-            <Skeleton className="h-40 w-full rounded-lg" />
-            <Skeleton className="h-72 w-full rounded-lg" />
+            <Skeleton className="h-40 w-full rounded" />
+            <Skeleton className="h-72 w-full rounded" />
           </div>
           <div className="page-grid-side space-y-5">
-            <Skeleton className="h-64 w-full rounded-lg" />
-            <Skeleton className="h-28 w-full rounded-lg" />
+            <Skeleton className="h-64 w-full rounded" />
+            <Skeleton className="h-28 w-full rounded" />
           </div>
         </div>
       </div>
@@ -236,7 +238,7 @@ export function CustomerCaseDetail() {
           Back to cases
         </Link>
         <div className="mt-2 flex flex-wrap items-center gap-2.5">
-          <h1 className="text-title font-semibold text-ink">Case {caseData.case_number}</h1>
+          <h1 className="text-title font-extrabold text-ink">Case {caseData.case_number}</h1>
           <span key={caseData.status} className="animate-fade-in" aria-live="polite">
             <StatusPill meta={statusMeta(caseData.status)} />
           </span>
@@ -252,35 +254,37 @@ export function CustomerCaseDetail() {
       <div className="page-grid">
         <div className="page-grid-main space-y-5">
           <section className={cn(PANEL, 'p-6')}>
-            <h2 className="max-w-prose text-section font-semibold text-ink">{headline}</h2>
-            <p className="mt-1.5 max-w-prose text-body text-muted">{supporting}</p>
+            <h2 className="max-w-prose text-[24px] font-extrabold leading-8 text-ink">{headline}</h2>
+            <p className="mt-2 max-w-prose text-body text-muted">{supporting}</p>
             {caseData.next_step && caseData.next_step !== caseData.summary && (
-              <p className="mt-1 text-body text-muted">{caseData.next_step}</p>
+              <p className="mt-1 max-w-prose text-body text-muted">{caseData.next_step}</p>
             )}
-            <div className="mt-6 border-t border-line pt-5">
+            <div className="mt-6 border-t-2 border-line pt-6">
               <Stepper steps={steps} />
             </div>
           </section>
 
           <section className={cn(PANEL, 'p-6')}>
-            <h2 className="text-section font-semibold text-ink">Payment and order</h2>
-            <div className="mt-4 grid gap-5 sm:grid-cols-2 sm:gap-0">
-              <div className="sm:pr-6">
-                <p className="text-meta text-muted">PayPal</p>
-                <p className="mt-1 text-section font-semibold tabular-nums text-ink">
-                  {payment ? formatMinorUnits(payment.amount_minor, payment.currency) : '—'}
-                </p>
-                <div className="mt-2">
-                  <StatusPill meta={statusMeta(payment?.status)} />
+            <h2 className="text-section font-bold text-ink">Payment and order</h2>
+            <div className="cq mt-4">
+              <div className="split-panel rounded border-2 border-line">
+                <div className="p-4 sm:p-5">
+                  <p className="section-tag text-muted">PayPal</p>
+                  <p className="mt-1 text-hero font-extrabold tabular-nums text-ink">
+                    {payment ? formatMinorUnits(payment.amount_minor, payment.currency) : '—'}
+                  </p>
+                  <div className="mt-2">
+                    <StatusPill meta={statusMeta(payment?.status)} />
+                  </div>
                 </div>
-              </div>
-              <div className="border-t border-line pt-5 sm:border-l sm:border-t-0 sm:pl-6 sm:pt-0">
-                <p className="text-meta text-muted">Store order</p>
-                <p className="mt-1 break-all font-mono text-[18px] font-semibold text-ink">
-                  {order?.ref ?? '—'}
-                </p>
-                <div className="mt-2">
-                  <StatusPill meta={statusMeta(order?.status)} />
+                <div className="p-4 sm:p-5">
+                  <p className="section-tag text-muted">Store order</p>
+                  <p className="mt-1 break-all font-mono text-[18px] font-bold text-ink sm:text-[20px]">
+                    {order?.ref ?? '—'}
+                  </p>
+                  <div className="mt-2">
+                    <StatusPill meta={statusMeta(order?.status)} />
+                  </div>
                 </div>
               </div>
             </div>
@@ -288,7 +292,7 @@ export function CustomerCaseDetail() {
 
           <section className={cn(PANEL, 'p-6')}>
             <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
-              <h2 className="text-section font-semibold text-ink">Conversation</h2>
+              <h2 className="text-section font-bold text-ink">Conversation</h2>
               <p className="text-[12px] text-muted">Messages are shared with your merchant.</p>
             </div>
             <Conversation
@@ -301,8 +305,8 @@ export function CustomerCaseDetail() {
         </div>
 
         <aside className="page-grid-side space-y-5">
-          <section className={cn(PANEL, 'p-4')}>
-            <h2 className="text-body font-semibold text-ink">Case timeline</h2>
+          <section className={cn(PANEL, 'p-5')}>
+            <h2 className="text-body font-bold text-ink">Case timeline</h2>
             <div className="mt-4">
               <Timeline
                 entries={timelineEntries}
