@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -105,7 +106,15 @@ func handleCreateOrder(w http.ResponseWriter, r *http.Request) {
 	claimToken := randHex(16)
 	o := store.Create(orderID, 4900, "USD", claimToken)
 
-	providerOrderID, approveURL, err := paypal.CreateOrder(4900, "USD", orderID)
+	publicBase := os.Getenv("MERCHANT_PUBLIC_URL")
+	if publicBase == "" {
+		publicBase = "http://localhost:8090"
+	}
+	publicBase = strings.TrimRight(publicBase, "/")
+	returnURL := publicBase + "/api/capture/" + orderID
+	cancelURL := publicBase + "/?cancelled=1"
+
+	providerOrderID, approveURL, err := paypal.CreateOrder(4900, "USD", orderID, returnURL, cancelURL)
 	if err != nil {
 		slog.Error("paypal create order", "err", err)
 		http.Error(w, `{"error":"checkout failed"}`, http.StatusBadGateway)
@@ -207,7 +216,9 @@ func handleMerchantWebhook(w http.ResponseWriter, r *http.Request) {
 	var evt struct {
 		ID        string `json:"id"`
 		EventType string `json:"event_type"`
-		Resource  struct{ ID string `json:"id"` } `json:"resource"`
+		Resource  struct {
+			ID string `json:"id"`
+		} `json:"resource"`
 	}
 	if err := json.Unmarshal(body, &evt); err != nil {
 		http.Error(w, `{"error":"bad body"}`, http.StatusBadRequest)

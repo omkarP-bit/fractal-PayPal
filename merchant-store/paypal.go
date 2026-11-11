@@ -31,7 +31,7 @@ func NewMPayPal(clientID, clientSecret, baseURL string) *MPayPal {
 	}
 }
 
-func (p *MPayPal) CreateOrder(amountMinor int64, currency, invoiceID string) (string, string, error) {
+func (p *MPayPal) CreateOrder(amountMinor int64, currency, invoiceID, returnURL, cancelURL string) (string, string, error) {
 	token, err := p.accessToken()
 	if err != nil {
 		return "", "", fmt.Errorf("token: %w", err)
@@ -46,6 +46,10 @@ func (p *MPayPal) CreateOrder(amountMinor int64, currency, invoiceID string) (st
 					"currency_code": currency,
 				},
 			},
+		},
+		"application_context": map[string]any{
+			"return_url": returnURL,
+			"cancel_url": cancelURL,
 		},
 	}
 	b, _ := json.Marshal(body)
@@ -62,10 +66,10 @@ func (p *MPayPal) CreateOrder(amountMinor int64, currency, invoiceID string) (st
 		return "", "", fmt.Errorf("create order %d: %s", resp.StatusCode, string(raw))
 	}
 	var parsed struct {
-		ID     string `json:"id"`
-		Links  []struct {
-			Rel   string `json:"rel"`
-			Href  string `json:"href"`
+		ID    string `json:"id"`
+		Links []struct {
+			Rel    string `json:"rel"`
+			Href   string `json:"href"`
 			Method string `json:"method"`
 		} `json:"links"`
 	}
@@ -99,8 +103,8 @@ func (p *MPayPal) CaptureOrder(orderID string) (captureID string, status string,
 		return "", "", fmt.Errorf("capture %d: %s", resp.StatusCode, string(raw))
 	}
 	var parsed struct {
-		ID string `json:"id"`
-		Status string `json:"status"`
+		ID            string `json:"id"`
+		Status        string `json:"status"`
 		PurchaseUnits []struct {
 			Payments struct {
 				Captures []struct {

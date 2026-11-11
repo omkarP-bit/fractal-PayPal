@@ -91,6 +91,7 @@ services:
       - PAYPAL_CLIENT_SECRET=${PAYPAL_CLIENT_SECRET}
       - PAYPAL_BASE_URL=${PAYPAL_BASE_URL}
       - FRACTAL_API_BASE=http://fractal-api:8080
+      - MERCHANT_PUBLIC_URL=${MERCHANT_PUBLIC_URL:-http://localhost:8090}
       - MERCHANT_PORT=8090
     depends_on:
       - fractal-api
