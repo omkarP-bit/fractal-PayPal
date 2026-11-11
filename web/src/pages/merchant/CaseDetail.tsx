@@ -9,14 +9,15 @@ import { Button } from '../../components/ui/Button';
 
 interface MerchantCaseView extends CustomerCaseView {
   provider: { name: string; order_id: string; capture_id: string; fetched_at: string };
-  investigation: {
+  investigation?: {
     category: string;
     root_cause_hypothesis: string;
     evidence_ids: string[];
     suggested_severity: string;
     validation_status: string;
-  };
-  latest_decision: { id: string; outcome: string; policy_revision: string; findings: any[] };
+  } | null;
+  latest_decision?: { id: string; outcome: string; policy_revision: string; findings: any[] } | null;
+  activity?: { id: number; actor_type: string; event_type: string; visibility: string; data: any; created_at: string }[];
   available_actions: string[];
   pending_approvals: any[];
   version: number;
@@ -173,26 +174,34 @@ export function MerchantCaseDetail() {
               <h3 className="font-medium text-gray-900">AI Investigation (Advisory)</h3>
             </div>
             <div className="space-y-3">
-              <div className="flex justify-between items-start">
-                <div>
-                  <p className="text-xs font-medium text-gray-500 uppercase">Category</p>
-                  <div className="text-sm font-medium text-gray-900">{caseData.investigation.category}</div>
-                </div>
-                <span className={`badge badge-${caseData.investigation.suggested_severity.toLowerCase()}`}>
-                  {caseData.investigation.suggested_severity}
-                </span>
-              </div>
-              <div className="bg-gray-50 rounded-lg p-3 border border-gray-200">
-                <p className="text-sm text-gray-800 dark:text-gray-700">{caseData.investigation.root_cause_hypothesis}</p>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {caseData.investigation.evidence_ids.map((id) => (
-                    <span key={id} className="text-xs bg-blue-50 text-blue-700 px-2 py-1 rounded border border-blue-200">
-                      {id}
+              {caseData.investigation ? (
+                <>
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <p className="text-xs font-medium text-gray-500 uppercase">Category</p>
+                      <div className="text-sm font-medium text-gray-900">{caseData.investigation.category}</div>
+                    </div>
+                    <span className={`badge badge-${caseData.investigation.suggested_severity.toLowerCase()}`}>
+                      {caseData.investigation.suggested_severity}
                     </span>
-                  ))}
-                  <span className="text-xs text-gray-500 italic">(verified)</span>
-                </div>
-              </div>
+                  </div>
+                  <div className="bg-gray-50 rounded-lg p-3 border border-gray-200">
+                    <p className="text-sm text-gray-800 dark:text-gray-700">{caseData.investigation.root_cause_hypothesis}</p>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {caseData.investigation.evidence_ids.map((id) => (
+                        <span key={id} className="text-xs bg-blue-50 text-blue-700 px-2 py-1 rounded border border-blue-200">
+                          {id}
+                        </span>
+                      ))}
+                      <span className="text-xs text-gray-500 italic">(verified)</span>
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <p className="text-sm text-gray-600">
+                  No AI investigation has been recorded for this case. Facts are still verified by the backend and governed by PolicyGuard.
+                </p>
+              )}
             </div>
           </div>
 
@@ -201,23 +210,57 @@ export function MerchantCaseDetail() {
               <Lock className="w-4 h-4 text-green-500" />
               <h3 className="font-medium text-gray-900">PolicyGuard Decision</h3>
             </div>
-            <div className="flex items-center gap-4 py-4 bg-green-50 rounded-lg border border-green-200">
-              <div className="flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-green-500" />
-                <span className="font-bold text-green-700 text-sm">[ ALLOW ]</span>
-              </div>
-              <div className="text-sm text-gray-900">
-                rev {caseData.latest_decision.policy_revision}
-              </div>
-            </div>
             <div className="space-y-2">
-              {caseData.latest_decision.findings.map((f: any, idx: number) => (
-                <div key={idx} className="flex items-start gap-2 text-sm">
-                  <span className="text-xs font-medium text-green-600">PASS</span>
-                  <div className="text-sm text-gray-700">{f.rule_id} {f.code}</div>
-                  <div className="text-xs text-gray-500 mt-0.5">{f.message}</div>
-                </div>
-              ))}
+              {caseData.latest_decision ? (
+                <>
+                  <div
+                    className={`flex items-center gap-4 py-4 rounded-lg border ${
+                      caseData.latest_decision.outcome === 'ALLOW'
+                        ? 'bg-green-50 border-green-200'
+                        : caseData.latest_decision.outcome === 'BLOCK'
+                          ? 'bg-red-50 border-red-200'
+                          : 'bg-amber-50 border-amber-200'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <span
+                        className={`w-2 h-2 rounded-full ${
+                          caseData.latest_decision.outcome === 'ALLOW'
+                            ? 'bg-green-500'
+                            : caseData.latest_decision.outcome === 'BLOCK'
+                              ? 'bg-red-500'
+                              : 'bg-amber-500'
+                        }`}
+                      />
+                      <span
+                        className={`font-bold text-sm ${
+                          caseData.latest_decision.outcome === 'ALLOW'
+                            ? 'text-green-700'
+                            : caseData.latest_decision.outcome === 'BLOCK'
+                              ? 'text-red-700'
+                              : 'text-amber-700'
+                        }`}
+                      >
+                        [ {caseData.latest_decision.outcome.replace('_', ' ')} ]
+                      </span>
+                    </div>
+                    <div className="text-sm text-gray-900">
+                      rev {caseData.latest_decision.policy_revision}
+                    </div>
+                  </div>
+                  {caseData.latest_decision.findings.map((f: any, idx: number) => (
+                    <div key={idx} className="flex items-start gap-2 text-sm">
+                      <span className="text-xs font-medium text-gray-600">{f.result ?? 'PASS'}</span>
+                      <div className="text-sm text-gray-700">{f.rule_id} {f.code}</div>
+                      <div className="text-xs text-gray-500 mt-0.5">{f.message}</div>
+                    </div>
+                  ))}
+                </>
+              ) : (
+                <p className="text-sm text-gray-600">
+                  No policy decision yet. Run Reconcile to evaluate this case against PolicyGuard.
+                </p>
+              )}
             </div>
           </div>
 
@@ -247,21 +290,17 @@ export function MerchantCaseDetail() {
           <div className="bg-white dark:bg-gray-800 border border-gray-200 rounded-lg shadow-sm p-6">
             <h3 className="font-medium text-gray-900 mb-4">Audit Timeline</h3>
             <div className="space-y-3">
-              {[
-                { time: '10:02', text: 'Case opened', type: 'C' },
-                { time: '10:02', text: 'Payment confirmed', type: 'S' },
-                { time: '10:03', text: 'Merchant notified', type: 'M' },
-                { time: '10:04', text: 'Agent run', type: 'M' },
-                { time: '10:05', text: 'Decision', type: 'M' },
-                { time: '10:06', text: 'Reconciled', type: 'C' },
-              ].map((item, idx) => (
-                <div key={idx} className="flex items-start gap-3 relative">
-                  <div className={`relative w-2.5 h-2.5 rounded-full ${item.type === 'C' ? 'bg-gray-400' : 'bg-blue-500'}`} />
+              {(caseData.activity ?? []).length === 0 && (
+                <p className="text-sm text-gray-600">No activity has been recorded yet.</p>
+              )}
+              {(caseData.activity ?? []).map((item) => (
+                <div key={item.id} className="flex items-start gap-3 relative">
+                  <div className={`relative w-2.5 h-2.5 rounded-full ${item.visibility === 'CUSTOMER' ? 'bg-blue-500' : 'bg-gray-400'}`} />
                   <div className="absolute left-1/2 top-2.5 bottom-2 w-0.5 bg-gray-200" />
-                  <div className="text-xs text-gray-500">{item.time}</div>
-                  <div className="text-sm text-gray-700">{item.text}</div>
-                  <span className={`text-xs ${item.type === 'C' ? 'text-blue-600' : 'text-gray-500'} font-medium`}>
-                    [{item.type === 'C' ? 'Customer' : 'Merchant'}]
+                  <div className="text-xs text-gray-500">{item.created_at.slice(11, 16)}</div>
+                  <div className="text-sm text-gray-700">{item.event_type.replaceAll('_', ' ').toLowerCase()}</div>
+                  <span className={`text-xs ${item.visibility === 'CUSTOMER' ? 'text-blue-600' : 'text-gray-500'} font-medium`}>
+                    [{item.actor_type === 'CUSTOMER' ? 'Customer' : item.actor_type === 'MERCHANT_USER' ? 'Merchant' : 'System'}]
                   </span>
                 </div>
               ))}
