@@ -515,7 +515,8 @@ func (h *Handlers) buildDetail(ctx context.Context, caseID string, claims *auth.
 	if isMerchant(claims) && summary.Status != "RESOLVED" && summary.Status != "CLOSED" {
 		detail.AvailableActions = append(detail.AvailableActions, "RECONCILE_MERCHANT_ORDER", "REQUEST_REFUND")
 	}
-	if isMerchant(claims) && len(detail.PendingApprovals) > 0 {
+	if isMerchant(claims) && len(detail.PendingApprovals) > 0 &&
+		summary.Status != "RESOLVED" && summary.Status != "CLOSED" {
 		detail.AvailableActions = append(detail.AvailableActions, "DECIDE_APPROVAL")
 	}
 

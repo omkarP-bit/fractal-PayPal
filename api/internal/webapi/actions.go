@@ -398,9 +398,9 @@ func (h *Handlers) reconcile(w http.ResponseWriter, r *http.Request, caseID stri
 				sha256Hex([]byte("ACTION_FAILED:"+execID)))
 			h.Log.Warn("merchant reconcile failed", "case", caseID, "err", reason)
 			writeJSON(w, http.StatusBadGateway, actionResponse{
-				Decision: decisionOut,
+				Decision:  decisionOut,
 				Execution: &executionInfo{ID: execID, Status: "FAILED"},
-				Case:     caseState{Status: state.Status, Version: state.Version},
+				Case:      caseState{Status: state.Status, Version: state.Version},
 			})
 			return
 		}
@@ -425,6 +425,11 @@ func (h *Handlers) reconcile(w http.ResponseWriter, r *http.Request, caseID stri
 			UPDATE action_executions
 			SET status = 'SUCCEEDED', response = $2, completed_at = now()
 			WHERE id = $1`, execID, string(responseBody))
+
+		_, _ = h.DB.Exec(ctx, `
+			UPDATE approvals
+			SET decision = 'REJECTED', reason = 'case resolved', revoked_at = now(), decided_at = now()
+			WHERE case_id = $1 AND decision = 'PENDING'`, caseID)
 
 		_, _ = h.DB.Exec(ctx, `
 			INSERT INTO order_snapshots

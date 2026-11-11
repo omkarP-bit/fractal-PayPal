@@ -63,5 +63,9 @@ func main() {
 		FROM users u WHERE u.email = 'staff@acme.com'
 		ON CONFLICT (merchant_id, user_id) DO NOTHING`)
 
+	must(`INSERT INTO policy_bundles (revision, bundle_sha256, status, activated_at)
+		VALUES ('2026-11-07.1', 'seed', 'ACTIVE', now())
+		ON CONFLICT (revision) DO NOTHING`)
+
 	logger.Info("seed complete", "claim_token_hash", tokenHash)
 }

@@ -32,6 +32,9 @@ actions := {
 merchants := {
     "MER-501": {
         "approval_threshold_minor": 20000
+    },
+    "00000000-0000-0000-0000-0000000000c1": {
+        "approval_threshold_minor": 20000
     }
 }
 
