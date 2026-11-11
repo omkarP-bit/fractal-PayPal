@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Plus, Clock, CreditCard, AlertCircle, Info, ShieldCheck } from '../../components/ui/Icons';
-import { apiClient, Case } from '../../services/api';
+import { apiClient } from '../../services/api';
 import { useAuthStore } from '../../store/auth';
-import { Badge } from '../components/ui/Badge';
-import { Button } from '../components/ui/Button';
+import { Badge } from '../../components/ui/Badge';
+import { Button } from '../../components/ui/Button';
 
 interface Case {
   id: string;
@@ -103,13 +103,13 @@ export function CustomerDashboard() {
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-6">
+        <div className="bg-white dark:bg-gray-800 border border-gray-200 rounded-lg shadow-sm p-6">
           <div className="flex items-end gap-2">
             <span className="text-3xl font-bold text-gray-900">{cases.length}</span>
           </div>
           <p className="text-xs font-medium text-gray-500 uppercase mt-3">Total Cases</p>
         </div>
-        <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-6">
+        <div className="bg-white dark:bg-gray-800 border border-gray-200 rounded-lg shadow-sm p-6">
           <div className="flex items-center gap-3 mb-2">
             <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center">
               <Clock className="w-4 h-4 text-blue-600" />
@@ -120,7 +120,7 @@ export function CustomerDashboard() {
             </div>
           </div>
         </div>
-        <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-6">
+        <div className="bg-white dark:bg-gray-800 border border-gray-200 rounded-lg shadow-sm p-6">
           <div className="flex items-center gap-3 mb-2">
             <div className="w-8 h-8 rounded-lg bg-green-50 flex items-center justify-center">
               <ShieldCheck className="w-4 h-4 text-green-600" />
@@ -133,7 +133,7 @@ export function CustomerDashboard() {
         </div>
       </div>
 
-      <div className="bg-white border border-gray-200 rounded-lg shadow-sm">
+      <div className="bg-white dark:bg-gray-800 border border-gray-200 rounded-lg shadow-sm">
         <div className="overflow-hidden">
           <table className="w-full text-left border-collapse">
             <thead>

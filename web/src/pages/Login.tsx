@@ -88,8 +88,8 @@ export function LoginPage() {
               onClick={() => setRole(roleOpt.value)}
               className={`flex flex-col items-center gap-2 px-4 py-4 rounded-xl text-sm font-medium transition-all border ${
                 role === roleOpt.value
-                  ? 'bg-paypal-50 border-2 border-paypal-600 text-paypal-600 shadow-sm'
-                  : 'bg-white border border-gray-200 text-gray-600 hover:border-paypal-600'
+                  ? 'bg-paypal-50 border-2 border-paypal-600 text-paypal-600 shadow-sm dark:text-paypal-300'
+                  : 'bg-white dark:bg-gray-800 border border-gray-200 text-gray-600 hover:border-paypal-600'
               }`}
             >
               <roleOpt.icon className="w-5 h-5" />
