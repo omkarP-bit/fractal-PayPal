@@ -190,7 +190,8 @@ func (p *PayPal) GetTransaction(ctx context.Context, providerOrderID string) (*e
 		ID            string `json:"id"`
 		Status        string `json:"status"`
 		PurchaseUnits []struct {
-			Amount struct {
+			InvoiceID string `json:"invoice_id"`
+			Amount    struct {
 				Value        string `json:"value"`
 				CurrencyCode string `json:"currency_code"`
 			} `json:"amount"`
@@ -208,7 +209,9 @@ func (p *PayPal) GetTransaction(ctx context.Context, providerOrderID string) (*e
 
 	amountMinor := int64(0)
 	currency := "USD"
+	merchantOrderRef := ""
 	if len(out.PurchaseUnits) > 0 {
+		merchantOrderRef = out.PurchaseUnits[0].InvoiceID
 		currency = out.PurchaseUnits[0].Amount.CurrencyCode
 		if currency == "" {
 			currency = "USD"
@@ -227,6 +230,7 @@ func (p *PayPal) GetTransaction(ctx context.Context, providerOrderID string) (*e
 		Provider:         "PAYPAL",
 		ProviderOrderID:  out.ID,
 		CaptureID:        captureID,
+		MerchantOrderRef: merchantOrderRef,
 		AmountMinor:      amountMinor,
 		Currency:         currency,
 		Status:           out.Status,

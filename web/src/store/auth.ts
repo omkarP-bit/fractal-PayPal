@@ -5,8 +5,11 @@ export interface User {
   sub: string;
   kind: 'CUSTOMER' | 'MERCHANT_USER' | 'PLATFORM_ADMIN' | 'SERVICE';
   merchant_id?: string;
+  merchant_name?: string;
   role?: string;
   permissions?: string[];
+  email?: string;
+  display_name?: string;
 }
 
 interface AuthState {

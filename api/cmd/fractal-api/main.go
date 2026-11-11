@@ -38,17 +38,34 @@ func (p *webhookProcessor) Process(ctx context.Context, ev webhook.EventRow) err
 		ID        string `json:"id"`
 		EventType string `json:"event_type"`
 		Resource  struct {
-			ID string `json:"id"`
+			ID               string `json:"id"`
+			SupplementaryData struct {
+				RelatedIDs struct {
+					OrderID string `json:"order_id"`
+				} `json:"related_ids"`
+			} `json:"supplementary_data"`
 		} `json:"resource"`
 	}
 	if err := json.Unmarshal(ev.Payload, &payload); err != nil {
 		return fmt.Errorf("parse webhook payload: %w", err)
 	}
 
+	providerOrderID := payload.Resource.SupplementaryData.RelatedIDs.OrderID
+	if providerOrderID == "" {
+		providerOrderID = payload.Resource.ID
+	}
+
 	// Fetch fresh provider state from PayPal.
-	tx, err := p.paypal.GetTransaction(ctx, payload.Resource.ID)
+	tx, err := p.paypal.GetTransaction(ctx, providerOrderID)
 	if err != nil {
 		return fmt.Errorf("fetch paypal transaction: %w", err)
+	}
+
+	var merchantID string
+	if err := p.db.QueryRow(ctx, `
+		SELECT merchant_id::text FROM provider_accounts WHERE id = $1`,
+		ev.ProviderAccountID).Scan(&merchantID); err != nil {
+		return fmt.Errorf("resolve provider account %s: %w", ev.ProviderAccountID, err)
 	}
 
 	// Upsert payment_transactions.
@@ -60,9 +77,10 @@ func (p *webhookProcessor) Process(ctx context.Context, ev webhook.EventRow) err
 			    amount_minor = EXCLUDED.amount_minor,
 			    currency = EXCLUDED.currency,
 			    provider_status = EXCLUDED.provider_status,
+			    merchant_order_ref = EXCLUDED.merchant_order_ref,
 			    last_fetched_at = EXCLUDED.last_fetched_at`,
-		tx.Provider, "", tx.Provider, tx.ProviderOrderID, tx.CaptureID,
-		tx.AmountMinor, tx.Currency, tx.Status, "", tx.FetchedAt,
+		merchantID, ev.ProviderAccountID, tx.ProviderOrderID, tx.CaptureID,
+		tx.AmountMinor, tx.Currency, tx.Status, tx.MerchantOrderRef, tx.FetchedAt,
 	)
 	if err != nil {
 		return fmt.Errorf("upsert payment_transaction: %w", err)
@@ -231,6 +249,8 @@ func main() {
 	mux.Handle("POST /api/v1/cases/{id}/approvals/{approvalID}", middleware(auth.RequireAuth(http.HandlerFunc(web.DecideApproval))))
 
 	mux.Handle("POST /api/v1/webhooks/paypal/{provider_account_id}", middleware(h))
+
+	mux.Handle("POST /internal/v1/claim-tokens", middleware(http.HandlerFunc(web.RegisterClaimToken)))
 
 	mux.Handle("GET /internal/v1/telemetry/logs", middleware(http.HandlerFunc(endpoints.LogsByCase)))
 	mux.Handle("GET /internal/v1/telemetry/traces/{trace_id}", middleware(http.HandlerFunc(endpoints.TraceByID)))

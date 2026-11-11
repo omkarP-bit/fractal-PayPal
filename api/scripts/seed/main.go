@@ -45,25 +45,22 @@ func main() {
 		('admin@fractal.dev', 'Platform Admin', 'PLATFORM_ADMIN')
 		ON CONFLICT (email) DO NOTHING`)
 
-	must(`INSERT INTO merchants (legal_name, country, integration_base_url, integration_key_ref)
-		SELECT 'Acme Store', 'US', 'http://merchant-store:8090', 'ref:acme:dev-key'
-		WHERE NOT EXISTS (SELECT 1 FROM merchants WHERE legal_name = 'Acme Store')`)
+	must(`INSERT INTO merchants (id, legal_name, country, integration_base_url, integration_key_ref)
+		VALUES ('00000000-0000-0000-0000-0000000000c1', 'Acme Store', 'US', 'http://merchant-store:8090', 'ref:acme:dev-key')
+		ON CONFLICT (id) DO NOTHING`)
 
-	must(`INSERT INTO provider_accounts (merchant_id, provider, environment, external_account_id, credentials_ref, webhook_id)
-		SELECT m.id, 'PAYPAL', 'SANDBOX', 'PAYPAL-MERCHANT-123', 'ref:paypal:sandbox-secret', 'WH-SBX-1'
-		FROM (SELECT id FROM merchants WHERE legal_name = 'Acme Store' ORDER BY created_at LIMIT 1) m
+	must(`INSERT INTO provider_accounts (id, merchant_id, provider, environment, external_account_id, credentials_ref, webhook_id)
+		VALUES ('00000000-0000-0000-0000-0000000000c2', '00000000-0000-0000-0000-0000000000c1', 'PAYPAL', 'SANDBOX', 'PAYPAL-MERCHANT-123', 'ref:paypal:sandbox-secret', 'WH-SBX-1')
 		ON CONFLICT (provider, environment, external_account_id) DO NOTHING`)
 
 	must(`INSERT INTO merchant_members (merchant_id, user_id, role, permissions)
-		SELECT m.id, u.id, 'MERCHANT_ADMIN', ARRAY['reconcile','refund']
-		FROM (SELECT id FROM merchants WHERE legal_name = 'Acme Store' ORDER BY created_at LIMIT 1) m, users u
-		WHERE u.email = 'ops@acme.com'
+		SELECT '00000000-0000-0000-0000-0000000000c1', u.id, 'MERCHANT_ADMIN', ARRAY['reconcile','refund']
+		FROM users u WHERE u.email = 'ops@acme.com'
 		ON CONFLICT (merchant_id, user_id) DO NOTHING`)
 
 	must(`INSERT INTO merchant_members (merchant_id, user_id, role, permissions)
-		SELECT m.id, u.id, 'MERCHANT_STAFF', ARRAY['reconcile']
-		FROM (SELECT id FROM merchants WHERE legal_name = 'Acme Store' ORDER BY created_at LIMIT 1) m, users u
-		WHERE u.email = 'staff@acme.com'
+		SELECT '00000000-0000-0000-0000-0000000000c1', u.id, 'MERCHANT_STAFF', ARRAY['reconcile']
+		FROM users u WHERE u.email = 'staff@acme.com'
 		ON CONFLICT (merchant_id, user_id) DO NOTHING`)
 
 	logger.Info("seed complete", "claim_token_hash", tokenHash)

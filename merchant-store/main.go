@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
@@ -17,11 +18,12 @@ import (
 )
 
 var (
-	store                   = NewStore()
-	paypal                  *MPayPal
-	fractalURL              string
-	breakMu                 sync.Mutex
-	breakHandler            bool
+	store                     = NewStore()
+	paypal                    *MPayPal
+	fractalURL                string
+	merchantID                string
+	breakMu                   sync.Mutex
+	breakHandler              bool
 	merchantIntegrationSecret string
 )
 
@@ -37,6 +39,7 @@ func main() {
 		fractalURL = "http://localhost:8080"
 	}
 	merchantIntegrationSecret = os.Getenv("MERCHANT_INTEGRATION_SECRET")
+	merchantID = os.Getenv("MERCHANT_ID")
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /", handleStorefront)
@@ -66,6 +69,7 @@ func handleStorefront(w http.ResponseWriter, r *http.Request) {
 <h2>Acme Store</h2>
 <p>Wireless Mouse — 49.00 USD</p>
 <form method="POST" action="/api/orders">
+  <label>Email: <input type="email" name="email" value="buyer@example.com" required></label>
   <button type="submit">PayPal Checkout</button>
 </form>
 <p>Merchant webhook handler: <b>%v</b> — <a href="/admin/break">toggle</a></p>
@@ -77,11 +81,16 @@ func handleStorefront(w http.ResponseWriter, r *http.Request) {
 // ---------- checkout ----------
 
 func handleCreateOrder(w http.ResponseWriter, r *http.Request) {
+	email := r.FormValue("email")
+	if email == "" {
+		email = "buyer@example.com"
+	}
+
 	orderID := "ORDER-" + randHex(8)
 	claimToken := randHex(16)
 	o := store.Create(orderID, 4900, "USD", claimToken)
 
-	providerOrderID, approveURL, err := paypal.CreateOrder(4900, "USD")
+	providerOrderID, approveURL, err := paypal.CreateOrder(4900, "USD", orderID)
 	if err != nil {
 		slog.Error("paypal create order", "err", err)
 		http.Error(w, `{"error":"checkout failed"}`, http.StatusBadGateway)
@@ -89,7 +98,54 @@ func handleCreateOrder(w http.ResponseWriter, r *http.Request) {
 	}
 	o.ProviderOrderID = providerOrderID
 
+	if err := registerClaimToken(orderID, claimToken, email); err != nil {
+		slog.Error("register claim token", "order", orderID, "err", err)
+	}
+
 	http.Redirect(w, r, approveURL, http.StatusFound)
+}
+
+func registerClaimToken(orderRef, claimToken, email string) error {
+	if merchantID == "" {
+		return fmt.Errorf("MERCHANT_ID is not set")
+	}
+	if merchantIntegrationSecret == "" {
+		return fmt.Errorf("MERCHANT_INTEGRATION_SECRET is not set")
+	}
+	body, err := json.Marshal(map[string]any{
+		"merchant_id":        merchantID,
+		"merchant_order_ref": orderRef,
+		"customer_email":     email,
+		"token":              claimToken,
+		"amount_minor":       4900,
+		"currency":           "USD",
+	})
+	if err != nil {
+		return err
+	}
+	timestamp := strconv.FormatInt(time.Now().Unix(), 10)
+	mac := hmac.New(sha256.New, []byte(merchantIntegrationSecret))
+	mac.Write([]byte(timestamp + "." + string(body)))
+	signature := hex.EncodeToString(mac.Sum(nil))
+
+	req, err := http.NewRequest(http.MethodPost, fractalURL+"/internal/v1/claim-tokens", bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Fractal-Timestamp", timestamp)
+	req.Header.Set("X-Fractal-Signature", signature)
+
+	resp, err := (&http.Client{Timeout: 10 * time.Second}).Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		return fmt.Errorf("fractal returned %d: %s", resp.StatusCode, string(raw))
+	}
+	return nil
 }
 
 // After buyer approves on PayPal, they return here. We capture the order.

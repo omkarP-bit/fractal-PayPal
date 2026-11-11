@@ -31,7 +31,7 @@ func NewMPayPal(clientID, clientSecret, baseURL string) *MPayPal {
 	}
 }
 
-func (p *MPayPal) CreateOrder(amountMinor int64, currency string) (string, string, error) {
+func (p *MPayPal) CreateOrder(amountMinor int64, currency, invoiceID string) (string, string, error) {
 	token, err := p.accessToken()
 	if err != nil {
 		return "", "", fmt.Errorf("token: %w", err)
@@ -40,6 +40,7 @@ func (p *MPayPal) CreateOrder(amountMinor int64, currency string) (string, strin
 		"intent": "CAPTURE",
 		"purchase_units": []map[string]any{
 			{
+				"invoice_id": invoiceID,
 				"amount": map[string]any{
 					"value":         fmt.Sprintf("%.2f", float64(amountMinor)/100),
 					"currency_code": currency,

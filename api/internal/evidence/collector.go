@@ -22,6 +22,7 @@ type Transaction struct {
 	Provider         string
 	ProviderOrderID  string
 	CaptureID        string
+	MerchantOrderRef string
 	AmountMinor      int64
 	Currency         string
 	Status           string

@@ -10,10 +10,11 @@ import (
 
 // EventRow is a stored, verified event waiting to be processed.
 type EventRow struct {
-	ID         string
-	EventType  string
-	ResourceID string
-	Payload    []byte
+	ID                string
+	EventType         string
+	ResourceID        string
+	ProviderAccountID string
+	Payload           []byte
 }
 
 // Processor turns a verified event into domain effects (update payment_transactions,
@@ -85,12 +86,12 @@ func (w *Worker) processOne(ctx context.Context) (bool, error) {
 
 	var ev EventRow
 	err = tx.QueryRowContext(ctx, `
-		SELECT id, event_type, COALESCE(resource_id, ''), payload
+		SELECT id::text, event_type, COALESCE(resource_id, ''), provider_account_id::text, payload
 		FROM webhook_events
 		WHERE processing_status = 'RECEIVED'
 		ORDER BY received_at
 		LIMIT 1
-		FOR UPDATE SKIP LOCKED`).Scan(&ev.ID, &ev.EventType, &ev.ResourceID, &ev.Payload)
+		FOR UPDATE SKIP LOCKED`).Scan(&ev.ID, &ev.EventType, &ev.ResourceID, &ev.ProviderAccountID, &ev.Payload)
 	if errors.Is(err, sql.ErrNoRows) {
 		return false, nil
 	}

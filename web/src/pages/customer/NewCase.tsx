@@ -7,10 +7,11 @@ import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 
 export function NewCase() {
+  const { user } = useAuthStore();
   const [form, setForm] = useState({
     merchant_id: '',
     merchant_order_ref: '',
-    email: '',
+    email: user?.email ?? '',
     token: '',
     case_type: 'PROVIDER_MERCHANT_STATE_MISMATCH',
     description: '',
@@ -18,7 +19,6 @@ export function NewCase() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const navigate = useNavigate();
-  const { user } = useAuthStore();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -68,15 +68,14 @@ export function NewCase() {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Merchant ID
+                Merchant ID (optional)
               </label>
               <input
                 type="text"
                 value={form.merchant_id}
                 onChange={(e) => setForm({ ...form, merchant_id: e.target.value })}
-                placeholder="MER-1234"
+                placeholder="Resolved from claim code"
                 className="input-field"
-                required
               />
             </div>
             <div>
