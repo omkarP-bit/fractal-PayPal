@@ -3,8 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Mail, Lock, CreditCard, Plus } from '../../components/ui/Icons';
 import { apiClient, CreateCaseRequest } from '../../services/api';
 import { useAuthStore } from '../../store/auth';
-import { Button } from '../components/ui/Button';
-import { Input } from '../components/ui/Input';
+import { Button } from '../../components/ui/Button';
+import { Input } from '../../components/ui/Input';
 
 export function NewCase() {
   const [form, setForm] = useState({
@@ -60,7 +60,7 @@ export function NewCase() {
       )}
 
       <form onSubmit={handleSubmit} className="space-y-6">
-        <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-6">
+        <div className="bg-white dark:bg-gray-800 border border-gray-200 rounded-lg shadow-sm p-6">
           <div className="flex items-center gap-2 mb-4">
             <CreditCard className="w-4 h-4 text-gray-500" />
             <h3 className="font-medium text-gray-900">Payment Details</h3>
@@ -95,7 +95,7 @@ export function NewCase() {
           </div>
         </div>
 
-        <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-6">
+        <div className="bg-white dark:bg-gray-800 border border-gray-200 rounded-lg shadow-sm p-6">
           <div className="flex items-center gap-2 mb-4">
             <Lock className="w-4 h-4 text-gray-500" />
             <h3 className="font-medium text-gray-900">Ownership Proof</h3>
@@ -133,7 +133,7 @@ export function NewCase() {
           </div>
         </div>
 
-        <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-6">
+        <div className="bg-white dark:bg-gray-800 border border-gray-200 rounded-lg shadow-sm p-6">
           <div className="flex items-center gap-2 mb-4">
             <Mail className="w-4 h-4 text-gray-500" />
             <h3 className="font-medium text-gray-900">Description</h3>

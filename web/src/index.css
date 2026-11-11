@@ -2,6 +2,142 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Theme palette: light values match the stock Tailwind palette exactly;
+   .dark swaps them for the night palette (surfaces darken, text lightens). */
+:root {
+  color-scheme: light;
+
+  --paypal-50: 240 247 255;
+  --paypal-700: 0 74 217;
+
+  --gray-50: 249 250 251;
+  --gray-100: 243 244 246;
+  --gray-200: 229 231 235;
+  --gray-300: 209 213 219;
+  --gray-400: 156 163 175;
+  --gray-500: 107 114 128;
+  --gray-600: 75 85 99;
+  --gray-700: 55 65 81;
+  --gray-800: 31 41 55;
+  --gray-900: 17 24 39;
+  --gray-950: 3 7 18;
+
+  --red-50: 254 242 242;
+  --red-100: 254 226 226;
+  --red-200: 254 202 202;
+  --red-300: 252 165 165;
+  --red-400: 248 113 113;
+  --red-500: 239 68 68;
+  --red-600: 220 38 38;
+  --red-700: 185 28 28;
+  --red-800: 153 27 27;
+  --red-900: 127 29 29;
+  --red-950: 69 10 10;
+
+  --amber-50: 255 251 235;
+  --amber-100: 254 243 199;
+  --amber-200: 253 230 138;
+  --amber-300: 252 211 77;
+  --amber-400: 251 191 36;
+  --amber-500: 245 158 11;
+  --amber-600: 217 119 6;
+  --amber-700: 180 83 9;
+  --amber-800: 146 64 14;
+  --amber-900: 120 53 15;
+  --amber-950: 69 26 3;
+
+  --blue-50: 239 246 255;
+  --blue-100: 219 234 254;
+  --blue-200: 191 219 254;
+  --blue-300: 147 197 253;
+  --blue-400: 96 165 250;
+  --blue-500: 59 130 246;
+  --blue-600: 37 99 235;
+  --blue-700: 29 78 216;
+  --blue-800: 30 64 175;
+  --blue-900: 30 58 138;
+  --blue-950: 23 37 84;
+
+  --green-50: 240 253 244;
+  --green-100: 220 252 231;
+  --green-200: 187 247 208;
+  --green-300: 134 239 172;
+  --green-400: 74 222 128;
+  --green-500: 34 197 94;
+  --green-600: 22 163 74;
+  --green-700: 21 128 61;
+  --green-800: 22 101 52;
+  --green-900: 20 83 45;
+  --green-950: 5 46 22;
+}
+
+.dark {
+  color-scheme: dark;
+
+  --paypal-50: 26 49 83;
+  --paypal-700: 37 99 235; /* blue-600: white text = 5.17:1 (>= 4.5:1) on hover */
+
+  --gray-50: 17 24 39;
+  --gray-100: 24 32 47;
+  --gray-200: 55 65 81;
+  --gray-300: 75 85 99;
+  --gray-400: 125 133 147;
+  --gray-500: 156 163 175;
+  --gray-600: 209 213 219;
+  --gray-700: 229 231 235;
+  --gray-800: 31 41 55;
+  --gray-900: 249 250 251;
+  --gray-950: 3 7 18;
+
+  --red-50: 69 10 10;
+  --red-100: 127 29 29;
+  --red-200: 153 27 27;
+  --red-300: 252 165 165;
+  --red-400: 248 113 113;
+  --red-500: 248 113 113;
+  --red-600: 248 113 113;
+  --red-700: 252 165 165;
+  --red-800: 153 27 27;
+  --red-900: 127 29 29;
+  --red-950: 69 10 10;
+
+  --amber-50: 120 53 15;
+  --amber-100: 146 64 14;
+  --amber-200: 180 83 9;
+  --amber-300: 251 191 36;
+  --amber-400: 251 191 36;
+  --amber-500: 245 158 11;
+  --amber-600: 251 191 36;
+  --amber-700: 252 211 77;
+  --amber-800: 146 64 14;
+  --amber-900: 120 53 15;
+  --amber-950: 69 26 3;
+
+  --blue-50: 23 37 84;
+  --blue-100: 30 58 138;
+  --blue-200: 30 64 175;
+  --blue-300: 96 165 250;
+  --blue-400: 96 165 250;
+  --blue-500: 96 165 250;
+  --blue-600: 96 165 250;
+  --blue-700: 147 197 253;
+  --blue-800: 191 219 254;
+  --blue-900: 219 234 254;
+  --blue-950: 23 37 84;
+
+  --green-50: 6 78 59;
+  --green-100: 20 83 45;
+  --green-200: 22 101 52;
+  --green-300: 74 222 128;
+  --green-400: 74 222 128;
+  --green-500: 74 222 128;
+  --green-600: 34 197 94;
+  --green-700: 134 239 172;
+  --green-800: 20 83 45;
+  --green-900: 5 46 22;
+  --green-950: 5 46 22;
+}
+
 @layer base {
   body {
     @apply bg-gray-50 text-gray-900;
@@ -13,7 +149,7 @@
     @apply bg-paypal-600 hover:bg-paypal-700 text-white font-medium px-4 py-2 rounded-md transition-colors disabled:opacity-50;
   }
   .btn-secondary {
-    @apply bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 font-medium px-4 py-2 rounded-md transition-colors;
+    @apply bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 font-medium px-4 py-2 rounded-md transition-colors dark:bg-gray-800 dark:hover:bg-gray-100;
   }
   .btn-outline {
     @apply border border-gray-300 hover:bg-gray-50 text-gray-700 font-medium px-4 py-2 rounded-md transition-colors;
@@ -22,7 +158,7 @@
     @apply block w-full border border-gray-300 rounded-md px-3 py-2 shadow-sm focus:ring-paypal-500 focus:border-paypal-500 transition-colors;
   }
   .card {
-    @apply bg-white border border-gray-200 rounded-lg shadow-sm p-6;
+    @apply bg-white border border-gray-200 rounded-lg shadow-sm p-6 dark:bg-gray-800;
   }
   .badge {
     @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
@@ -51,4 +187,18 @@
   .badge-pending {
     @apply bg-gray-50 text-gray-700 border border-gray-200;
   }
+}
+
+/* Night mode: recharts hard-codes #666 label text and a white tooltip. */
+.dark svg text[fill="#666"] {
+  fill: #d1d5db; /* gray-300 */
+}
+
+.dark .recharts-default-tooltip {
+  background-color: #1f2937 !important; /* match .card dark bg (gray-800) */
+  border-color: #374151 !important;
+}
+
+.dark .recharts-tooltip-label {
+  color: #e5e7eb; /* gray-200 */
 }

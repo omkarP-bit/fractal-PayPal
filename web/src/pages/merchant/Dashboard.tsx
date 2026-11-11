@@ -3,9 +3,9 @@ import { Link, useNavigate } from 'react-router-dom';
 import { Clock, ShieldCheck, CreditCard, AlertCircle, Bell, Filter } from '../../components/ui/Icons';
 import { apiClient, Case } from '../../services/api';
 import { useAuthStore } from '../../store/auth';
-import { Card } from '../components/ui/Card';
-import { Button } from '../components/ui/Button';
-import { Badge } from '../components/ui/Badge';
+import { Card } from '../../components/ui/Card';
+import { Button } from '../../components/ui/Button';
+import { Badge } from '../../components/ui/Badge';
 
 interface MerchantCase extends Case {
   investigation?: {
@@ -30,6 +30,7 @@ export function MerchantDashboard() {
       setLoading(true);
       const data = await apiClient.getCases();
       setCases(data as MerchantCase[]);
+      setError(null); // clear any stale error so Retry can recover
     } catch (err: any) {
       setError(err.message || 'Failed to load cases');
       if (err.message.includes('401')) {
@@ -100,11 +101,11 @@ export function MerchantDashboard() {
             Manage payment exception cases for your store
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex w-full items-center gap-3 sm:w-auto">
           <input
             type="text"
             placeholder="Search cases..."
-            className="input-field w-64"
+            className="input-field w-full sm:w-96 lg:w-[32rem]"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
@@ -175,7 +176,7 @@ export function MerchantDashboard() {
             className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${
               filter === f
                 ? 'bg-paypal-600 text-white'
-                : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'
+                : 'bg-white dark:bg-gray-800 text-gray-600 border border-gray-200 hover:bg-gray-50'
             }`}
           >
             {f.charAt(0).toUpperCase() + f.slice(1).replace('-', ' ')}
