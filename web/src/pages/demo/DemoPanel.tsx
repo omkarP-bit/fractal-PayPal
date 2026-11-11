@@ -1,6 +1,32 @@
-import { useState } from 'react';
-import { LineChart, Line, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, PieChart, Pie, Cell } from 'recharts';
-import { Play, RefreshCw, AlertTriangle, CheckCircle, Server, AlertCircle } from '../../components/ui/Icons';
+import { useState, type ReactNode } from 'react';
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  Line,
+  LineChart,
+  Pie,
+  PieChart,
+  ResponsiveContainer,
+  Tooltip as ChartTooltip,
+  XAxis,
+  YAxis,
+} from 'recharts';
+import {
+  CheckCircle2,
+  FlaskConical,
+  RefreshCw,
+  RotateCcw,
+  Server,
+  AlertTriangle,
+} from 'lucide-react';
+import { toast } from 'sonner';
+import { cn } from '../../lib/cn';
+import { Button } from '../../components/ui/Button';
+import { ConfirmDialog } from '../../components/ui/Dialog';
+import { PageHeader, PanelHeader } from '../../components/ui/Panel';
+import { StatusPill } from '../../components/ui/StatusPill';
 
 const MOCK_REPLAY_DATA = [
   { name: 'Attempt 1', success: 45, failed: 5 },
@@ -19,232 +45,420 @@ const MOCK_LATENCY_DATA = [
 ];
 
 const MOCK_DISTRIBUTION = [
-  { name: 'ALLOW', value: 65, color: '#22c55e' },
-  { name: 'REQUIRE_APPROVAL', value: 20, color: '#2563eb' },
-  { name: 'WAIT', value: 10, color: '#f59e0b' },
-  { name: 'BLOCK', value: 5, color: '#ef4444' },
+  { name: 'Approved', value: 65, color: 'var(--success)' },
+  { name: 'Needs approval', value: 20, color: 'var(--warning)' },
+  { name: 'Waiting', value: 10, color: 'var(--info)' },
+  { name: 'Blocked', value: 5, color: 'var(--danger)' },
 ];
+
+interface DemoAction {
+  title: string;
+  description: string;
+  confirmLabel: string;
+  destructive?: boolean;
+  run: () => Promise<void> | void;
+}
+
+function delay(ms: number) {
+  return new Promise<void>((resolve) => {
+    window.setTimeout(resolve, ms);
+  });
+}
+
+function ChartPanel({
+  title,
+  description,
+  children,
+  className,
+}: {
+  title: string;
+  description?: string;
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <section className={cn('rounded-lg border border-line bg-surface p-5', className)}>
+      <PanelHeader title={title} description={description} />
+      <div className="mt-4">{children}</div>
+    </section>
+  );
+}
 
 export function DemoPanel() {
   const [handlerBroken, setHandlerBroken] = useState(false);
   const [concurrencyResult, setConcurrencyResult] = useState<string | null>(null);
   const [isRunning, setIsRunning] = useState(false);
+  const [action, setAction] = useState<DemoAction | null>(null);
+  const [actionBusy, setActionBusy] = useState(false);
 
-  const toggleHandler = () => setHandlerBroken(!handlerBroken);
+  const runAction = async () => {
+    if (!action) return;
+    setActionBusy(true);
+    try {
+      await action.run();
+    } finally {
+      setActionBusy(false);
+      setAction(null);
+    }
+  };
+
+  const simulate = async (title: string, description: string) => {
+    await delay(700);
+    toast.success(title, { description });
+  };
+
+  const toggleHandler = () => {
+    const next = !handlerBroken;
+    setHandlerBroken(next);
+    toast[next ? 'warning' : 'success'](
+      next ? 'Webhook handler is broken' : 'Webhook handler restored',
+      {
+        description: next
+          ? 'New webhook deliveries will fail until you restore it.'
+          : 'New webhook deliveries will process normally.',
+      },
+    );
+  };
 
   const runConcurrencyTest = async () => {
     setIsRunning(true);
     setConcurrencyResult(null);
-    await new Promise((resolve) => setTimeout(resolve, 2000));
-    setConcurrencyResult('1 executed, 49 duplicates');
+    await delay(1800);
+    setConcurrencyResult('1 executed, 49 duplicates blocked');
     setIsRunning(false);
+    toast.success('Concurrency test finished', {
+      description: 'One replay executed and 49 duplicate attempts were blocked.',
+    });
   };
 
-  const renderButtonContent = () => {
-    if (isRunning) {
-      return (
-        <span className="flex items-center gap-2">
-          <Play className="w-4 h-4 animate-spin" />
-          Running...
-        </span>
-      );
-    }
-    return (
-      <span className="flex items-center gap-2">
-        <Play className="w-4 h-4" />
-        Fire 50 Concurrent Replays
-      </span>
-    );
-  };
+  const seedAction = (scenario: string, description: string): DemoAction => ({
+    title: `Seed ${scenario.toLowerCase()}?`,
+    description,
+    confirmLabel: 'Seed scenario',
+    run: () => simulate('Scenario seeded', `${scenario} is ready in the demo case list.`),
+  });
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Demo Control Panel</h1>
-          <p className="text-gray-600 text-sm">Local-only demo controls for testing FRACTAL flows</p>
-        </div>
-        <div className="flex items-center gap-3">
-          <span className={`px-2 py-1 rounded text-xs font-medium ${
-            handlerBroken ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-600'
-          }`}>
-            {handlerBroken ? 'Handler: BROKEN' : 'Handler: Working'}
-          </span>
-          <button
-            onClick={toggleHandler}
-            className="px-3 py-1.5 rounded text-sm font-medium text-gray-600 bg-white dark:bg-gray-800 border border-gray-200 hover:bg-gray-100 transition-colors"
+    <div className="space-y-5">
+      <PageHeader
+        title="Demo controls"
+        description="Simulated, local-only tools for testing FRACTAL flows."
+      />
+
+      <div className="grid gap-5 lg:grid-cols-3">
+        <section className="rounded-lg border border-line bg-surface p-5 lg:col-span-2">
+          <PanelHeader
+            title="Webhook handling"
+            description="Control how the mock store responds to payment notifications."
+            aside={
+              <StatusPill
+                meta={
+                  handlerBroken
+                    ? { label: 'Handler broken', tone: 'danger' }
+                    : { label: 'Handler working', tone: 'success' }
+                }
+              />
+            }
+          />
+          <div className="mt-4 flex flex-wrap items-center gap-3 border-t border-line pt-4">
+            <Server className="h-4 w-4 text-muted" aria-hidden="true" strokeWidth={1.75} />
+            <p className="min-w-0 flex-1 text-body text-muted">
+              {handlerBroken
+                ? 'Webhook deliveries are failing. Restore the handler to resume the demo flow.'
+                : 'Webhook deliveries are processed normally. Break it to test failure handling.'}
+            </p>
+            <Button
+              variant={handlerBroken ? 'secondary' : 'danger'}
+              onClick={() =>
+                setAction({
+                  title: handlerBroken ? 'Restore the webhook handler?' : 'Break the webhook handler?',
+                  description: handlerBroken
+                    ? 'New webhook deliveries will start processing again.'
+                    : 'New webhook deliveries will fail until you restore it. Existing data is not changed.',
+                  confirmLabel: handlerBroken ? 'Restore handler' : 'Break handler',
+                  destructive: !handlerBroken,
+                  run: toggleHandler,
+                })
+              }
+            >
+              {handlerBroken ? 'Restore handler' : 'Break handler'}
+            </Button>
+          </div>
+        </section>
+
+        <section className="rounded-lg border border-line bg-surface p-5">
+          <PanelHeader
+            title="Concurrency test"
+            description="Fire 50 replays at the same time."
+          />
+          <Button
+            variant="primary"
+            className="mt-4 w-full"
+            onClick={() =>
+              setAction({
+                title: 'Run 50 concurrent replays?',
+                description:
+                  'This stress-tests idempotency. Exactly one replay should execute and the rest should be blocked.',
+                confirmLabel: 'Run test',
+                run: runConcurrencyTest,
+              })
+            }
+            isLoading={isRunning}
+            loadingText="Running test…"
+            icon={<FlaskConical className="h-4 w-4" aria-hidden="true" strokeWidth={1.75} />}
           >
-            Toggle Handler
-          </button>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        <div className="card">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="font-medium text-gray-900">Webhook Replay</h3>
-            <Server className="w-4 h-4 text-gray-400" />
-          </div>
-          <div className="space-y-3">
-            <button
-              className="w-full flex items-center justify-center gap-2 px-4 py-3 border border-gray-200 rounded-lg text-sm text-gray-700 hover:bg-gray-50 transition-colors"
-            >
-              <RefreshCw className="w-4 h-4" /> Replay Last Webhook
-            </button>
-            <button
-              className="w-full flex items-center justify-center gap-2 px-4 py-3 border border-gray-200 rounded-lg text-sm text-gray-700 hover:bg-gray-50 transition-colors"
-            >
-              <AlertCircle className="w-4 h-4 text-red-500" />
-              Send Invalid Signature Webhook
-            </button>
-          </div>
-        </div>
-
-        <div className="card">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="font-medium text-gray-900">Concurrency Test</h3>
-            <CheckCircle className="w-4 h-4 text-gray-400" />
-          </div>
-          <div className="space-y-3">
-            <div className="text-sm text-gray-500">Fire 50 concurrent webhook replays</div>
-            <button
-              onClick={runConcurrencyTest}
-              disabled={isRunning}
-              className={`w-full flex items-center justify-center gap-2 px-4 py-3 rounded-lg text-sm font-medium transition-colors ${
-                isRunning ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : 'bg-paypal-600 text-white hover:bg-paypal-700'
-              }`}
-            >
-              {renderButtonContent()}
-            </button>
-            {concurrencyResult && (
-              <div className="bg-green-50 rounded-lg p-3 border border-green-200">
-                <div className="text-xs font-medium text-green-700 mb-1">Result</div>
-                <div className="text-sm text-green-700 font-medium">{concurrencyResult}</div>
+            Run 50 concurrent replays
+          </Button>
+          {concurrencyResult && (
+            <div className="mt-3 flex items-start gap-2 rounded-md bg-success-bg p-3">
+              <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-success" aria-hidden="true" />
+              <div>
+                <p className="text-meta font-medium text-success">Result</p>
+                <p className="text-[12px] text-ink">{concurrencyResult}</p>
               </div>
-            )}
-          </div>
-        </div>
-
-        <div className="card">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="font-medium text-gray-900">Seed Scenarios</h3>
-            <AlertTriangle className="w-4 h-4 text-gray-400" />
-          </div>
-          <div className="space-y-3">
-            <button
-              className="w-full flex items-center justify-center gap-2 px-4 py-3 border border-gray-200 rounded-lg text-sm text-gray-700 hover:bg-gray-50 transition-colors"
-            >
-              <AlertCircle className="w-4 h-4" />
-              Seed Amount Mismatch
-            </button>
-            <button
-              className="w-full flex items-center justify-center gap-2 px-4 py-3 border border-gray-200 rounded-lg text-sm text-gray-700 hover:bg-gray-50 transition-colors"
-            >
-              <AlertCircle className="w-4 h-4 text-orange-500" />
-              Seed Currency Mismatch
-            </button>
-            <button
-              className="w-full flex items-center justify-center gap-2 px-4 py-3 border border-gray-200 rounded-lg text-sm text-gray-700 hover:bg-gray-50 transition-colors"
-            >
-              <AlertCircle className="w-4 h-4 text-red-500" />
-              Seed Provider Unavailable
-            </button>
-          </div>
-        </div>
+            </div>
+          )}
+        </section>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="card lg:col-span-1">
-          <h3 className="font-medium text-gray-900 mb-4">Policy Decisions (Last 24h)</h3>
-          <div className="h-64">
-            <PieChart>
-              <Pie
-                data={MOCK_DISTRIBUTION}
-                dataKey="value"
-                nameKey="name"
-                cx="50%"
-                cy="50%"
-                outerRadius={80}
-                innerRadius={60}
-                labelLine={false}
-                label={({ name, percent }: any) => (
-                  <text x={0} y={6} dy={6} textAnchor="middle" fontSize={12} fill="#666">
-                    {name} {percent}%
-                  </text>
-                )}
-              >
-                {MOCK_DISTRIBUTION.map((entry) => (
-                  <Cell key={entry.name} fill={entry.color} />
-                ))}
-              </Pie>
-            </PieChart>
+      <div className="grid gap-5 md:grid-cols-2">
+        <section className="rounded-lg border border-line bg-surface p-5">
+          <PanelHeader title="Webhook replay" description="Re-send events through the pipeline." />
+          <div className="mt-4 space-y-2">
+            <Button
+              variant="outline"
+              className="w-full"
+              onClick={() =>
+                setAction({
+                  title: 'Replay the last webhook?',
+                  description:
+                    'The most recent webhook event is sent through the pipeline again. No money moves.',
+                  confirmLabel: 'Replay webhook',
+                  run: () =>
+                    simulate(
+                      'Webhook replayed',
+                      'The demo pipeline accepted the event again without a duplicate charge.',
+                    ),
+                })
+              }
+              icon={<RefreshCw className="h-4 w-4" aria-hidden="true" strokeWidth={1.75} />}
+            >
+              Replay last webhook
+            </Button>
+            <Button
+              variant="outline"
+              className="w-full"
+              onClick={() =>
+                setAction({
+                  title: 'Send an invalid-signature webhook?',
+                  description:
+                    'FRACTAL should reject it and record the failed verification. No case is created.',
+                  confirmLabel: 'Send invalid webhook',
+                  destructive: true,
+                  run: () =>
+                    simulate(
+                      'Invalid webhook sent',
+                      'The demo pipeline rejected the signature and produced no case.',
+                    ),
+                })
+              }
+              icon={<AlertTriangle className="h-4 w-4 text-danger" aria-hidden="true" strokeWidth={1.75} />}
+            >
+              Send invalid-signature webhook
+            </Button>
           </div>
-          <div className="flex justify-between text-xs text-gray-500 mt-3">
-            {MOCK_DISTRIBUTION.map((d) => (
-              <span key={d.name} className="flex items-center gap-1">
-                <span className={`w-2 h-2 rounded-full ${getColor(d.color)}`} />
-                {d.name}
-              </span>
-            ))}
-          </div>
-        </div>
+        </section>
 
-        <div className="card lg:col-span-2">
-          <h3 className="font-medium text-gray-900 mb-4">Webhook Latency by Stage</h3>
+        <section className="rounded-lg border border-line bg-surface p-5">
+          <PanelHeader title="Seed scenarios" description="Create a case for a known failure." />
+          <div className="mt-4 space-y-2">
+            <Button
+              variant="outline"
+              className="w-full"
+              onClick={() =>
+                setAction(
+                  seedAction(
+                    'Amount mismatch',
+                    'Creates a demo case where the payment and order totals differ.',
+                  ),
+                )
+              }
+            >
+              Seed amount mismatch
+            </Button>
+            <Button
+              variant="outline"
+              className="w-full"
+              onClick={() =>
+                setAction(
+                  seedAction(
+                    'Currency mismatch',
+                    'Creates a demo case where the payment and order currencies differ.',
+                  ),
+                )
+              }
+            >
+              Seed currency mismatch
+            </Button>
+            <Button
+              variant="outline"
+              className="w-full"
+              onClick={() =>
+                setAction(
+                  seedAction(
+                    'Provider unavailable',
+                    'Creates a demo case where the provider cannot confirm the payment.',
+                  ),
+                )
+              }
+            >
+              Seed provider unavailable
+            </Button>
+          </div>
+        </section>
+      </div>
+
+      <div className="grid gap-5 lg:grid-cols-3">
+        <ChartPanel title="Policy decisions" description="Last 24 hours">
+          <div className="relative h-52">
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie
+                  data={MOCK_DISTRIBUTION}
+                  dataKey="value"
+                  nameKey="name"
+                  cx="50%"
+                  cy="50%"
+                  innerRadius={54}
+                  outerRadius={82}
+                  stroke="var(--surface)"
+                  strokeWidth={2}
+                >
+                  {MOCK_DISTRIBUTION.map((entry) => (
+                    <Cell key={entry.name} fill={entry.color} />
+                  ))}
+                </Pie>
+                <ChartTooltip />
+              </PieChart>
+            </ResponsiveContainer>
+            <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
+              <span className="text-section font-semibold tabular-nums text-ink">100</span>
+              <span className="text-[11px] text-muted">decisions</span>
+            </div>
+          </div>
+          <ul className="mt-2 space-y-1.5">
+            {MOCK_DISTRIBUTION.map((entry) => (
+              <li key={entry.name} className="flex items-center justify-between gap-3 text-[12px]">
+                <span className="flex items-center gap-1.5 text-muted">
+                  <span
+                    className="h-1.5 w-1.5 rounded-full"
+                    style={{ backgroundColor: entry.color }}
+                    aria-hidden="true"
+                  />
+                  {entry.name}
+                </span>
+                <span className="tabular-nums text-ink">{entry.value}%</span>
+              </li>
+            ))}
+          </ul>
+        </ChartPanel>
+
+        <ChartPanel title="Webhook latency" description="Milliseconds by pipeline stage" className="lg:col-span-2">
           <div className="h-64">
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={MOCK_LATENCY_DATA}>
-                <XAxis dataKey="name" tick={{ fontSize: 10 }} tickLine={false} />
-                <YAxis tick={{ fontSize: 10 }} tickLine={false} />
-                <Tooltip />
-                <Line type="monotone" dataKey="latency" stroke="#2563eb" strokeWidth={2} dot />
+              <LineChart data={MOCK_LATENCY_DATA} margin={{ top: 8, right: 8, left: -18, bottom: 0 }}>
+                <CartesianGrid stroke="var(--border)" vertical={false} />
+                <XAxis
+                  dataKey="name"
+                  tick={{ fontSize: 11 }}
+                  tickLine={false}
+                  axisLine={false}
+                />
+                <YAxis tick={{ fontSize: 11 }} tickLine={false} axisLine={false} />
+                <ChartTooltip />
+                <Line
+                  type="monotone"
+                  dataKey="latency"
+                  stroke="var(--brand-blue)"
+                  strokeWidth={2}
+                  dot={{ r: 3, fill: 'var(--brand-blue)' }}
+                  activeDot={{ r: 4 }}
+                />
               </LineChart>
             </ResponsiveContainer>
           </div>
-        </div>
-
-        <div className="card lg:col-span-2">
-          <h3 className="font-medium text-gray-900 mb-4">Concurrent Replay Success Rate</h3>
-          <div className="h-64">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={MOCK_REPLAY_DATA}>
-                <XAxis dataKey="name" tick={{ fontSize: 10 }} tickLine={false} />
-                <YAxis tick={{ fontSize: 10 }} tickLine={false} />
-                <Tooltip />
-                <Bar dataKey="success" fill="#22c55e" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="failed" fill="#ef4444" radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-          <div className="flex justify-between text-xs text-gray-500 mt-3">
-            <span className="flex items-center gap-1">
-              <span className="w-2 h-2 rounded-full bg-green-500" /> Success
-            </span>
-            <span className="flex items-center gap-1">
-              <span className="w-2 h-2 rounded-full bg-red-500" /> Failed
-            </span>
-          </div>
-        </div>
+        </ChartPanel>
       </div>
 
-      <div className="card">
-        <div className="flex items-center justify-between">
-          <div>
-            <h3 className="font-medium text-gray-900">Reset Demo Data</h3>
-            <p className="text-sm text-gray-500">Reset all cases, transactions, and audit trail to initial state</p>
-          </div>
-          <button className="px-4 py-2 rounded-lg text-sm font-medium text-red-600 bg-red-50 hover:bg-red-100 transition-colors">
-            Reset All Demo Data
-          </button>
+      <ChartPanel
+        title="Concurrent replay success rate"
+        description="Five runs of 50 simultaneous webhook replays"
+      >
+        <div className="h-64">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={MOCK_REPLAY_DATA} margin={{ top: 8, right: 8, left: -18, bottom: 0 }}>
+              <CartesianGrid stroke="var(--border)" vertical={false} />
+              <XAxis dataKey="name" tick={{ fontSize: 11 }} tickLine={false} axisLine={false} />
+              <YAxis tick={{ fontSize: 11 }} tickLine={false} axisLine={false} />
+              <ChartTooltip />
+              <Bar dataKey="success" name="Executed" fill="var(--success)" radius={[4, 4, 0, 0]} />
+              <Bar dataKey="failed" name="Blocked" fill="var(--danger)" radius={[4, 4, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
         </div>
-      </div>
+        <div className="mt-3 flex items-center gap-4 text-[12px] text-muted">
+          <span className="flex items-center gap-1.5">
+            <span className="h-1.5 w-1.5 rounded-full bg-success" aria-hidden="true" />
+            Executed
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="h-1.5 w-1.5 rounded-full bg-danger" aria-hidden="true" />
+            Blocked
+          </span>
+        </div>
+      </ChartPanel>
+
+      <section className="flex flex-col gap-4 rounded-lg border border-danger bg-surface p-5 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h2 className="text-body font-semibold text-ink">Reset demo data</h2>
+          <p className="mt-0.5 text-meta text-muted">
+            Clears demo cases, payments and audit history. This cannot be undone.
+          </p>
+        </div>
+        <Button
+          variant="danger"
+          onClick={() =>
+            setAction({
+              title: 'Reset all demo data?',
+              description:
+                'Every demo case, payment and audit entry is removed and the seed data is restored. This cannot be undone.',
+              confirmLabel: 'Reset demo data',
+              destructive: true,
+              run: () =>
+                simulate(
+                  'Demo data reset',
+                  'The demo dataset is back to its starting state.',
+                ),
+            })
+          }
+          icon={<RotateCcw className="h-4 w-4" aria-hidden="true" strokeWidth={1.75} />}
+        >
+          Reset demo data
+        </Button>
+      </section>
+
+      <ConfirmDialog
+        open={action !== null}
+        onClose={() => {
+          if (!actionBusy) setAction(null);
+        }}
+        onConfirm={() => void runAction()}
+        title={action?.title ?? ''}
+        description={action?.description}
+        confirmLabel={action?.confirmLabel ?? 'Confirm'}
+        destructive={action?.destructive}
+        loading={actionBusy}
+      />
     </div>
   );
-}
-
-const getColor = (color: string) => {
-  if (color === '#22c55e') return 'bg-green-500';
-  if (color === '#2563eb') return 'bg-blue-500';
-  if (color === '#f59e0b') return 'bg-amber-500';
-  return 'bg-red-500';
 }
