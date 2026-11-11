@@ -3,11 +3,15 @@ package webapi
 import (
 	"bytes"
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -360,7 +364,13 @@ func (h *Handlers) reconcile(w http.ResponseWriter, r *http.Request, caseID stri
 		merchantReq, _ := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 		merchantReq.Header.Set("Content-Type", "application/json")
 		merchantReq.Header.Set("Idempotency-Key", idempotencyKey)
-		merchantReq.Header.Set("X-Fractal-Signature", "dev-mode")
+		ts := strconv.FormatInt(time.Now().Unix(), 10)
+		merchantReq.Header.Set("X-Fractal-Timestamp", ts)
+		if h.MerchantIntegrationSecret != "" {
+			mac := hmac.New(sha256.New, []byte(h.MerchantIntegrationSecret))
+			mac.Write([]byte(ts + "." + string(body)))
+			merchantReq.Header.Set("X-Fractal-Signature", hex.EncodeToString(mac.Sum(nil)))
+		}
 
 		resp, callErr := h.HTTP.Do(merchantReq)
 		var responseBody []byte

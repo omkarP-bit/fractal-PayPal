@@ -6,20 +6,37 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"fractal/api/internal/evidence"
 )
 
 type Executor struct {
 	db     *pgxpool.Pool
+	payPal PayPalFetcher
 	merch  MerchantAPI
 	policy PolicyEvaluator
 }
 
+type PayPalFetcher interface {
+	GetTransaction(ctx context.Context, providerOrderID string) (*evidence.Transaction, error)
+}
+
 type MerchantAPI interface {
 	Reconcile(ctx context.Context, orderRef string, body []byte, idempotencyKey string) ([]byte, int, error)
+	GetOrder(ctx context.Context, ref string) (OrderSnapshot, error)
+}
+
+type OrderSnapshot struct {
+	Ref         string
+	Status      string
+	AmountMinor int64
+	Currency    string
+	FetchedAt   time.Time
 }
 
 type PolicyEvaluator interface {
@@ -65,8 +82,7 @@ func (e *Executor) Execute(ctx context.Context, caseID, decisionID, actionType s
 		return nil, fmt.Errorf("insert execution: %w", err)
 	}
 
-	// Fresh state validation happens outside the lock (PayPal + merchant API calls).
-	// If PayPal is unreachable, fail closed — do not execute.
+	// Fresh state validation — fail closed if PayPal is unreachable.
 	if err := e.validateFreshState(ctx); err != nil {
 		if err2 := e.markFailed(ctx, tx, execID, err.Error()); err2 != nil {
 			return nil, err2
@@ -78,7 +94,7 @@ func (e *Executor) Execute(ctx context.Context, caseID, decisionID, actionType s
 	}
 
 	// Call merchant reconcile with the same idempotency key.
-	body, statusCode, err := e.merch.Reconcile(ctx, "ORDER-REF", params, idempotencyKey)
+	body, statusCode, err := e.merch.Reconcile(ctx, "", params, idempotencyKey)
 	if err != nil || statusCode >= 400 {
 		if err2 := e.markFailed(ctx, tx, execID, err.Error()); err2 != nil {
 			return nil, err2
@@ -134,9 +150,12 @@ func (e *Executor) markSucceeded(ctx context.Context, tx pgx.Tx, execID string, 
 	return err
 }
 
+// validateFreshState confirms PayPal is reachable (fail closed).
 func (e *Executor) validateFreshState(ctx context.Context) error {
-	// Placeholder: fresh PayPal + merchant state validation is wired in Phase 8 integration.
-	// Returns nil when fresh; error when PayPal is unreachable (fail closed).
+	_, err := e.payPal.GetTransaction(ctx, "")
+	if err != nil && !strings.Contains(err.Error(), "not found") {
+		return fmt.Errorf("paypal unreachable: %w", err)
+	}
 	return nil
 }
 

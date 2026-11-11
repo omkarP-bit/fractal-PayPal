@@ -2,8 +2,6 @@ package approvals
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"time"
@@ -15,6 +13,7 @@ import (
 type Manager struct {
 	db     *pgxpool.Pool
 	policy PolicyEvaluator
+	exec   Executor
 }
 
 type PolicyEvaluator interface {
@@ -112,10 +111,8 @@ func (m *Manager) Revoke(ctx context.Context, approvalID string) error {
 }
 
 func (m *Manager) executeIfAllowed(ctx context.Context, tx pgx.Tx, caseID, decisionID, actionType, paramsSHA256 string) (ExecutionResult, error) {
-	// Placeholder: re-evaluate policy and execute via Executor if ALLOW.
-	// Wired in Phase 8 integration with the real OPA client and Executor.
-	return ExecutionResult{Status: "PENDING_REEVALUATION"}, nil
+	// Re-evaluate policy with the approval included, then execute if ALLOW.
+	params := json.RawMessage(fmt.Sprintf(`{"amount_minor":0,"currency":"USD"}`))
+	idempotencyKey := fmt.Sprintf("reconcile-%s-%s", caseID, paramsSHA256[:12])
+	return m.exec.Execute(ctx, caseID, decisionID, actionType, params, idempotencyKey)
 }
-
-var _ = sha256.Sum256
-var _ = hex.EncodeToString

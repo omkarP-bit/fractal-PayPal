@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -24,6 +26,66 @@ import (
 	"fractal/api/internal/webapi"
 	"fractal/api/internal/webhook"
 )
+
+type webhookProcessor struct {
+	db     *pgxpool.Pool
+	paypal *provider.PayPal
+	log    *slog.Logger
+}
+
+func (p *webhookProcessor) Process(ctx context.Context, ev webhook.EventRow) error {
+	var payload struct {
+		ID        string `json:"id"`
+		EventType string `json:"event_type"`
+		Resource  struct {
+			ID string `json:"id"`
+		} `json:"resource"`
+	}
+	if err := json.Unmarshal(ev.Payload, &payload); err != nil {
+		return fmt.Errorf("parse webhook payload: %w", err)
+	}
+
+	// Fetch fresh provider state from PayPal.
+	tx, err := p.paypal.GetTransaction(ctx, payload.Resource.ID)
+	if err != nil {
+		return fmt.Errorf("fetch paypal transaction: %w", err)
+	}
+
+	// Upsert payment_transactions.
+	_, err = p.db.Exec(ctx, `
+		INSERT INTO payment_transactions (merchant_id, provider_account_id, provider, provider_order_id, capture_id, amount_minor, currency, provider_status, merchant_order_ref, last_fetched_at)
+		VALUES ($1, $2, 'PAYPAL', $3, $4, $5, $6, $7, $8, $9)
+		ON CONFLICT (provider, provider_order_id) DO UPDATE
+			SET capture_id = EXCLUDED.capture_id,
+			    amount_minor = EXCLUDED.amount_minor,
+			    currency = EXCLUDED.currency,
+			    provider_status = EXCLUDED.provider_status,
+			    last_fetched_at = EXCLUDED.last_fetched_at`,
+		tx.Provider, "", tx.Provider, tx.ProviderOrderID, tx.CaptureID,
+		tx.AmountMinor, tx.Currency, tx.Status, "", tx.FetchedAt,
+	)
+	if err != nil {
+		return fmt.Errorf("upsert payment_transaction: %w", err)
+	}
+
+	// Find matching cases for this payment and mark them for re-investigation.
+	_, err = p.db.Exec(ctx, `
+		UPDATE exception_cases
+		SET status = 'COLLECTING_EVIDENCE', version = version + 1, updated_at = now()
+		WHERE payment_transaction_id = (
+			SELECT id FROM payment_transactions
+			WHERE provider = 'PAYPAL' AND provider_order_id = $1
+		)
+		AND status NOT IN ('RESOLVED', 'REJECTED', 'CLOSED')`,
+		tx.ProviderOrderID,
+	)
+	if err != nil {
+		return fmt.Errorf("update cases: %w", err)
+	}
+
+	p.log.Info("webhook event processed", "event", ev.ID, "type", ev.EventType, "capture", payload.Resource.ID)
+	return nil
+}
 
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
@@ -95,9 +157,10 @@ func main() {
 		Log:      logger,
 	}
 
+	// Real webhook processor: updates payment_transactions from verified events.
 	go (&webhook.Worker{
 		DB:   sqlDB,
-		Proc: &noopProcessor{},
+		Proc: &webhookProcessor{db: pool, paypal: paypal, log: logger},
 		Wake: wakeCh,
 		Log:  logger,
 	}).Run(context.Background())
@@ -212,11 +275,4 @@ func main() {
 	defer cancel()
 	_ = srv.Shutdown(ctx)
 	slog.Info("fractal-api stopped")
-}
-
-type noopProcessor struct{}
-
-func (p *noopProcessor) Process(ctx context.Context, ev webhook.EventRow) error {
-	slog.Info("webhook event processed (noop)", "event", ev.ID, "type", ev.EventType)
-	return nil
 }

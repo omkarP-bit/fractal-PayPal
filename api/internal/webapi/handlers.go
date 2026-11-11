@@ -21,15 +21,16 @@ import (
 )
 
 type Handlers struct {
-	DB                *pgxpool.Pool
-	MerchantStoreBase string
-	HTTP              *http.Client
-	Log               *slog.Logger
+	DB                    *pgxpool.Pool
+	MerchantStoreBase     string
+	HTTP                  *http.Client
+	Log                   *slog.Logger
 
-	Policy       *policy.Client
-	PayPal       *provider.PayPal
-	Collector    *evidence.Collector
-	AnomalyEnabled bool
+	Policy                  *policy.Client
+	PayPal                  *provider.PayPal
+	Collector               *evidence.Collector
+	AnomalyEnabled          bool
+	MerchantIntegrationSecret string
 }
 
 func New(db *pgxpool.Pool, log *slog.Logger, policyClient *policy.Client, paypal *provider.PayPal, anomalyEnabled bool) *Handlers {
@@ -42,14 +43,15 @@ func New(db *pgxpool.Pool, log *slog.Logger, policyClient *policy.Client, paypal
 		client: &http.Client{Timeout: 12 * time.Second},
 	})
 	return &Handlers{
-		DB:             db,
-		MerchantStoreBase: base,
-		HTTP:           &http.Client{Timeout: 12 * time.Second},
-		Log:            log,
-		Policy:         policyClient,
-		PayPal:         paypal,
-		Collector:      collector,
-		AnomalyEnabled: anomalyEnabled,
+		DB:                       db,
+		MerchantStoreBase:        base,
+		HTTP:                     &http.Client{Timeout: 12 * time.Second},
+		Log:                      log,
+		Policy:                   policyClient,
+		PayPal:                   paypal,
+		Collector:                collector,
+		AnomalyEnabled:           anomalyEnabled,
+		MerchantIntegrationSecret: os.Getenv("MERCHANT_INTEGRATION_SECRET"),
 	}
 }
 

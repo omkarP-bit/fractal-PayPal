@@ -1,7 +1,9 @@
 package main
 
 import (
+	"crypto/hmac"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -9,16 +11,18 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"strconv"
 	"sync"
 	"time"
 )
 
 var (
-	store      = NewStore()
-	paypal     *MPayPal
-	fractalURL string
-	breakMu    sync.Mutex
-	breakHandler bool
+	store                   = NewStore()
+	paypal                  *MPayPal
+	fractalURL              string
+	breakMu                 sync.Mutex
+	breakHandler            bool
+	merchantIntegrationSecret string
 )
 
 func main() {
@@ -32,6 +36,7 @@ func main() {
 	if fractalURL == "" {
 		fractalURL = "http://localhost:8080"
 	}
+	merchantIntegrationSecret = os.Getenv("MERCHANT_INTEGRATION_SECRET")
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /", handleStorefront)
@@ -87,8 +92,10 @@ func handleCreateOrder(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, approveURL, http.StatusFound)
 }
 
-// After buyer approves on PayPal, they return here. We capture, then simulate
-// the PayPal webhook to the merchant's own (breakable) handler.
+// After buyer approves on PayPal, they return here. We capture the order.
+// PayPal sends the real webhook to this merchant's /webhooks/paypal endpoint
+// (registered on the PayPal app). The merchant store updates the order when
+// it receives and verifies that webhook.
 func handleCapture(w http.ResponseWriter, r *http.Request) {
 	orderID := r.PathValue("orderID")
 	o, ok := store.Get(orderID)
@@ -104,37 +111,14 @@ func handleCapture(w http.ResponseWriter, r *http.Request) {
 	}
 	o.CaptureID = captureID
 
-	// Simulate PayPal webhook POST to this merchant's /webhooks/paypal handler.
-	payload := map[string]any{
-		"id": "evt_" + captureID,
-		"event_type": "PAYMENT.CAPTURE.COMPLETED",
-		"resource": map[string]any{"id": captureID},
-	}
-	b, _ := json.Marshal(payload)
-	req, _ := http.NewRequest(http.MethodPost, "http://localhost:8090/webhooks/paypal", nil)
-	req.Body = io.NopCloser(io.MultiReader(bytesReaderStr(string(b))))
-	req.ContentLength = int64(len(b))
-	req.Header.Set("Content-Type", "application/json")
-	rec := &captureResponseWriter{header: http.Header{}}
-	handleMerchantWebhook(rec, req)
-	_ = rec
-
 	w.Header().Set("Content-Type", "text/html")
 	fmt.Fprintf(w, `<html><body>
 <h2>Captured</h2>
 <p>Order %s captured (capture %s). Order status: <b>%s</b>.</p>
-<p>Webhook handler was <b>%v</b>. If broken, order stays PAYMENT_PENDING.</p>
+<p>PayPal will send a webhook to this store to update the order. If the webhook handler is broken, the order stays PAYMENT_PENDING.</p>
 <p><a href="/orders/%s">View confirmation (claim code: %s)</a></p>
-</body></html>`, orderID, captureID, o.Status, breakHandler, orderID, o.ClaimToken)
+</body></html>`, orderID, captureID, o.Status, orderID, o.ClaimToken)
 }
-
-type captureResponseWriter struct {
-	header http.Header
-}
-
-func (c *captureResponseWriter) Header() http.Header       { return c.header }
-func (c *captureResponseWriter) Write([]byte) (int, error) { return 0, nil }
-func (c *captureResponseWriter) WriteHeader(int)           {}
 
 // ---------- breakable merchant webhook handler (PayPal -> merchant) ----------
 
@@ -224,11 +208,17 @@ func handleReconcile(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"missing Idempotency-Key"}`, http.StatusBadRequest)
 		return
 	}
-	if !validHMAC(r) {
+
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, `{"error":"unreadable body"}`, http.StatusBadRequest)
+		return
+	}
+	if !verifyHMAC(body, r.Header.Get("X-Fractal-Timestamp"), r.Header.Get("X-Fractal-Signature")) {
 		http.Error(w, `{"error":"bad signature"}`, http.StatusUnauthorized)
 		return
 	}
-	body, _ := io.ReadAll(r.Body)
+
 	var reqBody struct {
 		Provider        string `json:"provider"`
 		ProviderOrderID string `json:"provider_order_id"`
@@ -251,9 +241,32 @@ func handleReconcile(w http.ResponseWriter, r *http.Request) {
 		ref, time.Now().UTC().Format(time.RFC3339), idemKey == "replay-key")
 }
 
-func validHMAC(r *http.Request) bool {
-	// Dev-mode: accept any signature. Real impl verifies X-Fractal-Signature HMAC-SHA256.
-	return true
+func verifyHMAC(body []byte, timestamp, signature string) bool {
+	// Spec C8: verify X-Fractal-Signature = hex HMAC-SHA256 of
+	// timestamp + "." + raw_body with the per-merchant secret.
+	// Reject timestamps more than 5 minutes old.
+	if merchantIntegrationSecret == "" {
+		slog.Warn("MERCHANT_INTEGRATION_SECRET not set; rejecting request")
+		return false
+	}
+	if timestamp == "" || signature == "" {
+		return false
+	}
+
+	ts, err := strconv.ParseInt(timestamp, 10, 64)
+	if err != nil {
+		return false
+	}
+	if time.Now().Unix()-ts > 300 {
+		return false
+	}
+
+	message := timestamp + "." + string(body)
+	mac := hmac.New(sha256.New, []byte(merchantIntegrationSecret))
+	mac.Write([]byte(message))
+	expected := hex.EncodeToString(mac.Sum(nil))
+
+	return hmac.Equal([]byte(signature), []byte(expected))
 }
 
 func randHex(n int) string {
@@ -261,19 +274,3 @@ func randHex(n int) string {
 	_, _ = rand.Read(b)
 	return hex.EncodeToString(b)
 }
-
-type bytesReader struct {
-	s string
-	i int
-}
-
-func (br *bytesReader) Read(p []byte) (int, error) {
-	if br.i >= len(br.s) {
-		return 0, io.EOF
-	}
-	n := copy(p, br.s[br.i:])
-	br.i += n
-	return n, nil
-}
-
-func bytesReaderStr(s string) *bytesReader { return &bytesReader{s: s, i: 0} }
