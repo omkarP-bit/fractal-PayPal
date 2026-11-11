@@ -1,4 +1,4 @@
-.PHONY: up down seed test demo lint migrate-up migrate-down test-negative test-concurrency
+.PHONY: up down seed mint-claim test demo lint migrate-up migrate-down test-negative test-concurrency
 
 COMPOSE := docker-compose.yml
 API_DIR := api
@@ -30,6 +30,9 @@ migrate-down:
 seed:
 	@cd $(API_DIR) && DATABASE_URL="$(DB_URL)" go run -tags seed ./scripts/seed
 	@psql "$(DB_URL)" -f $(API_DIR)/scripts/seed_demo_merchant.sql
+
+mint-claim:
+	@cd $(API_DIR) && DATABASE_URL="$(DB_URL)" go run -tags mintclaim ./scripts/mintclaim $(ORDER) $(if $(EMAIL),$(EMAIL),buyer@example.com)
 
 test:
 	@cd $(API_DIR) && go test ./...

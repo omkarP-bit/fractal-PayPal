@@ -181,7 +181,8 @@ Seeded dev users (change in `scripts/seed`): one customer, one merchant admin, o
 
 1. On the mock store, set the merchant handler to **Broken** (or use `/demo`).
 2. Pay through PayPal Sandbox. The order stays `PAYMENT_PENDING`.
-3. As the customer, open a case with the order reference and the claim code shown on the confirmation page.
+3. As the customer, open a case with the order reference and the claim code shown on the confirmation page. The store registers each code with FRACTAL at checkout, bound to the email entered on the storefront. Codes expire after 24 hours and are single-use.
+   For local testing without a live PayPal checkout: `make mint-claim ORDER=ORDER-DEMO-1`.
 4. As the merchant, review the evidence, the Elastic log, the AI diagnosis and the PolicyGuard decision, then reconcile.
 5. Try the negative cases from `/demo`: invalid-signature webhook, amount mismatch, refund without approval.
 6. Fire 50 concurrent webhook replays. Exactly one action executes.
