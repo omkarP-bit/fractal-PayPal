@@ -3,3 +3,10 @@ uvicorn==0.30.0
 httpx==0.26.0
 langgraph>=0.1.0
 pydantic==2.7.0
+# Phase 11 anomaly detection (investigator/app/anomaly + tests):
+numpy==2.2.6
+scikit-learn==1.7.2
+pytest==7.4.3
+# Optional: model C (VAE) only. Not required for models A/B or the runtime;
+# tests skip when absent. Install torch separately if training model C.
+

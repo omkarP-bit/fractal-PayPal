@@ -13,8 +13,10 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	_ "github.com/jackc/pgx/v5/stdlib"
 
+	"fractal/api/internal/anomaly"
 	"fractal/api/internal/auth"
 	"fractal/api/internal/cases"
+	"fractal/api/internal/policy"
 	"fractal/api/internal/provider"
 	"fractal/api/internal/telemetry"
 	"fractal/api/internal/telemetry/endpoints"
@@ -46,7 +48,26 @@ func main() {
 	defer sqlDB.Close()
 
 	caseStore := cases.NewStore(pool)
-	caseHandlers := cases.NewHandlers(caseStore)
+
+	// Phase 11: anomaly scoring gate. Default OFF (score stays null ->
+	// identical behavior to Phase 10). If the shipped artifacts fail to load
+	// we disable scoring rather than guess — null is always safe.
+	anomalyEnabled := false
+	switch os.Getenv("FRACTAL_ANOMALY_ENABLED") {
+	case "true", "1", "yes":
+		anomalyEnabled = true
+	}
+	scorer, err := anomaly.NewScorer(anomalyEnabled)
+	if err != nil {
+		slog.Error("anomaly scorer unavailable; anomaly_score stays null", "err", err)
+		anomalyEnabled = false
+	} else {
+		baselineVer, iforestVer := scorer.ModelVersions()
+		slog.Info("anomaly scorer ready", "enabled", anomalyEnabled,
+			"baseline_model", baselineVer, "iforest_model", iforestVer)
+	}
+
+	caseHandlers := cases.NewHandlers(caseStore, anomalyEnabled)
 
 	// OpenTelemetry tracer (OTLP -> Elastic).
 	if tp, err := telemetry.InitTracer(os.Getenv("OTEL_ENDPOINT")); err != nil {
@@ -116,6 +137,16 @@ func main() {
 	mux.Handle("GET /internal/v1/telemetry/logs", middleware(http.HandlerFunc(endpoints.LogsByCase)))
 	mux.Handle("GET /internal/v1/telemetry/traces/{trace_id}", middleware(http.HandlerFunc(endpoints.TraceByID)))
 	mux.Handle("GET /internal/v1/telemetry/handler-error-rate", middleware(http.HandlerFunc(endpoints.HandlerErrorRate)))
+
+	// Phase 11: guard decision endpoint (fail-closed OPA client). While
+	// FRACTAL_ANOMALY_ENABLED is off, risk.anomaly_score is always null in
+	// the OPA input — Phase 10 equivalence holds by construction.
+	policyHandler := &policy.Handler{
+		Client:         policy.NewClient(os.Getenv("OPA_URL")),
+		AnomalyEnabled: anomalyEnabled,
+		Log:            logger,
+	}
+	mux.Handle("POST /internal/v1/policy/evaluate", middleware(http.HandlerFunc(policyHandler.Evaluate)))
 
 	mux.Handle("/", middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

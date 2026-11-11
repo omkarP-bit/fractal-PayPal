@@ -1,0 +1,63 @@
+{
+  "hard_max": {
+    "capture_to_order_update_s": 3600.0,
+    "handler_error_rate": 1.0,
+    "refund_velocity_per_hour": 50.0,
+    "webhook_delivery_latency_p95_s": 900.0,
+    "webhook_retry_count": 50.0
+  },
+  "method": "max clipped exceedance over Tukey upper fences (Q3+1.5*IQR), linear to documented hard_max",
+  "model_type": "baseline_thresholds",
+  "model_version": "baseline-20261110.1",
+  "score_range": [
+    0.0,
+    1.0
+  ],
+  "thresholds": {
+    "capture_to_order_update_s": {
+      "fence": 484.375,
+      "hard_max": 3600.0,
+      "iqr": 176.25,
+      "q1": 43.75,
+      "q3": 220.0
+    },
+    "handler_error_rate": {
+      "fence": 0.1463277072192513,
+      "hard_max": 1.0,
+      "iqr": 0.05251504010695186,
+      "q1": 0.015040106951871659,
+      "q3": 0.06755514705882353
+    },
+    "refund_velocity_per_hour": {
+      "fence": 0.33854166666666674,
+      "hard_max": 50.0,
+      "iqr": 0.13541666666666669,
+      "q1": 0.0,
+      "q3": 0.13541666666666669
+    },
+    "webhook_delivery_latency_p95_s": {
+      "fence": 371.75,
+      "hard_max": 900.0,
+      "iqr": 147.5,
+      "q1": 3.0,
+      "q3": 150.5
+    },
+    "webhook_retry_count": {
+      "fence": 17.25,
+      "hard_max": 50.0,
+      "iqr": 6.5,
+      "q1": 1.0,
+      "q3": 7.5
+    }
+  },
+  "trained_on": {
+    "n_vectors": 48,
+    "observed_counts": {
+      "capture_to_order_update_s": 48,
+      "handler_error_rate": 48,
+      "refund_velocity_per_hour": 48,
+      "webhook_delivery_latency_p95_s": 48,
+      "webhook_retry_count": 48
+    }
+  }
+}

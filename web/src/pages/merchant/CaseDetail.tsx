@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, ShieldCheck, Lock, FileText, AlertCircle, CreditCard, Clock } from '../../components/ui/Icons';
+import { ArrowLeft, ShieldCheck, Lock, FileText, AlertCircle, CreditCard, Clock, BarChart3 } from '../../components/ui/Icons';
 import { apiClient, CustomerCaseView } from '../../services/api';
 import { useAuthStore } from '../../store/auth';
 import { useSSE } from '../../hooks/useSSE';
@@ -21,6 +21,19 @@ interface MerchantCaseView extends CustomerCaseView {
   pending_approvals: any[];
   version: number;
   updated_at: string;
+  // Phase 11: admin-only. Present only for platform/merchant admins while
+  // FRACTAL_ANOMALY_ENABLED=true; absent otherwise (never for customers or
+  // staff).
+  anomaly?: {
+    score: number;
+    model_id: string;
+    model_version?: string;
+    window_start?: string;
+    window_end?: string;
+    calculated_at: string;
+    threshold: number;
+    features?: Record<string, number | null>;
+  };
 }
 
 export function MerchantCaseDetail() {
@@ -257,6 +270,61 @@ export function MerchantCaseDetail() {
               [C] Customer-visible &nbsp; [M] Merchant-only
             </div>
           </div>
+
+          {caseData.anomaly && (
+            <div className="bg-white dark:bg-gray-800 border border-gray-200 rounded-lg shadow-sm p-6">
+              <div className="flex items-center gap-2 mb-4">
+                <BarChart3 className="w-4 h-4 text-indigo-500" />
+                <h3 className="font-medium text-gray-900">Operational Anomaly (Admin)</h3>
+              </div>
+              <div className="flex items-center gap-3 mb-3">
+                <span className="text-2xl font-bold text-gray-900">{caseData.anomaly.score.toFixed(2)}</span>
+                <span
+                  className={`px-2 py-0.5 rounded-full text-xs font-medium border ${
+                    caseData.anomaly.score >= caseData.anomaly.threshold
+                      ? 'bg-amber-50 text-amber-700 border-amber-200'
+                      : 'bg-green-50 text-green-700 border-green-200'
+                  }`}
+                >
+                  {caseData.anomaly.score >= caseData.anomaly.threshold ? 'Elevated' : 'Normal'}
+                </span>
+              </div>
+              <div className="space-y-1 text-sm text-gray-600 mb-3">
+                {caseData.anomaly.features?.webhook_retry_count != null && (
+                  <div>
+                    Webhook retry signals:{' '}
+                    <span className="font-medium text-gray-900">{caseData.anomaly.features.webhook_retry_count}</span>{' '}
+                    in window
+                  </div>
+                )}
+                {caseData.anomaly.features?.handler_error_rate != null && (
+                  <div>
+                    Handler error rate:{' '}
+                    <span className="font-medium text-gray-900">
+                      {(caseData.anomaly.features.handler_error_rate * 100).toFixed(1)}%
+                    </span>
+                  </div>
+                )}
+                <div>
+                  Window: {caseData.anomaly.window_start?.slice(0, 16).replace('T', ' ')} →{' '}
+                  {caseData.anomaly.window_end?.slice(0, 16).replace('T', ' ')} UTC
+                </div>
+              </div>
+              <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-3 text-xs text-gray-600 dark:text-gray-300">
+                <p className="mb-1">
+                  <span className="font-medium">Tighten-only:</span> at or above {caseData.anomaly.threshold} this score
+                  can require admin approval — it can never allow a blocked action. With the model disabled the score is
+                  null and decisions are unchanged.
+                </p>
+                <p>
+                  Model {caseData.anomaly.model_id}
+                  {caseData.anomaly.model_version ? ` (${caseData.anomaly.model_version})` : ''} · scored{' '}
+                  {caseData.anomaly.calculated_at.slice(0, 16).replace('T', ' ')} UTC · evaluated on synthetic data
+                  (model card: investigator/app/anomaly/README.md)
+                </p>
+              </div>
+            </div>
+          )}
 
           <div className="bg-white dark:bg-gray-800 border border-gray-200 rounded-lg shadow-sm p-6">
             <h3 className="font-medium text-gray-900 mb-4">Your Access (Admin)</h3>

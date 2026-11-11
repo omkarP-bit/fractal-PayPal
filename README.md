@@ -223,6 +223,134 @@ A case ID is never a credential. Every request is checked for object-level acces
 make policy-test    # opa test, opa check --strict, opa fmt, advisory isolation, registry lint
 ```
 
+> Note: `make policy-test` targets the Makefile, which is not part of this
+> repository's tracked files. The exact Phase 11 commands below run directly.
+
+---
+
+## Anomaly detection (Phase 11)
+
+An operational anomaly score that is **tighten-only**: it feeds
+`risk.anomaly_score` into the OPA input and can escalate `ALLOW` to
+`REQUIRE_APPROVAL` (`RSK-002`), but it can never turn `BLOCK` into `ALLOW`,
+never authorizes an action by itself, and — with the model disabled or no
+score available — the system behaves exactly as before (score is `null`).
+
+### Components
+
+| Piece | Location | Role |
+|---|---|---|
+| Feature extraction (5 features) | `investigator/app/anomaly/features.py`, `api/internal/anomaly/features.go` | per-merchant windows from existing telemetry, identical logic in both languages |
+| Synthetic generator | `investigator/app/anomaly/synthetic.py` | labeled `SYNTHETIC` events; refuses to overwrite files |
+| Model A — statistical thresholds | `investigator/app/anomaly/baseline.py` → `artifacts/baseline.json` | Tukey fences, transparent score |
+| Model B — Isolation Forest | `investigator/app/anomaly/iforest.py` → `artifacts/iforest.json` | sklearn trees exported as JSON; Go walks them with no sklearn dependency |
+| Model C — VAE + classifier | `investigator/app/anomaly/vae.py` | experimental; **not retained** (did not beat the best baseline by 0.05 AUC on the synthetic benchmark) |
+| Evaluation/export | `investigator/app/anomaly/evaluate.py` | benchmark + artifact export + golden scores for parity tests |
+| Go runtime scoring | `api/internal/anomaly/` | `go:embed` artifacts, golden parity tests, provenance |
+| OPA input + fail-closed client | `api/internal/policy/`, `POST /internal/v1/policy/evaluate` | OPA down/500/malformed → `BLOCK` |
+| Scoring CLI | `api/scripts/anomaly/` | writes `anomaly_scores` (migration `0008` adds read indexes) |
+| Admin UI | `web/src/pages/merchant/CaseDetail.tsx` | anomaly card for merchant/platform admins only |
+
+### Run and test (exact commands)
+
+```bash
+# 1. Policy: Phase 10 suite + Phase 11 tighten-only invariants (18 tests)
+opa check --strict policies
+opa test policies
+
+# 2. Go: feature extraction, Python↔Go golden parity, fail-closed policy client
+cd api
+go test ./...
+go vet -tags anomaly ./...          # includes the scoring CLI
+
+# 3. Python: features, models, evaluation (46 tests)
+cd investigator
+python -m pytest tests -q
+
+# 4. Re-train and export artifacts (SYNTHETIC benchmark — not real-world accuracy)
+cd investigator
+python -m app.anomaly.evaluate --export-dir ../api/internal/anomaly/artifacts
+
+# 5. Score merchant telemetry into anomaly_scores (add -dry-run to preview only)
+cd api
+DATABASE_URL=postgresql://... go run -tags anomaly ./scripts/anomaly
+
+# 6. API with the signal OFF (default) and ON
+cd api
+FRACTAL_ANOMALY_ENABLED=false go run ./cmd/fractal-api   # default: anomaly_score is null
+FRACTAL_ANOMALY_ENABLED=true  OPA_URL=http://localhost:8181 go run ./cmd/fractal-api
+
+# 7. Apply the additive migration
+#    api/migrations/0008_anomaly_score_index.{up,down}.sql
+```
+
+### Live OPA demo: "this merchant's webhook failures are 8x normal"
+
+There are two switches, and both must be on for the signal to act:
+
+- **API side:** `FRACTAL_ANOMALY_ENABLED=true` (otherwise the Go handler sends
+  `risk.anomaly_score: null` no matter what).
+- **Policy side:** `anomaly_detection_enabled := true` in
+  `policies/data.rego` (shipped default is `false`).
+
+Start OPA (`opa run --server :8181 policies` or `make up`), then evaluate a
+reconcile input with a high score (the webhook-failure burst scenario scores
+~0.97):
+
+```bash
+curl -s localhost:8181/v1/data/fractal/guard/decision -H 'Content-Type: application/json' -d '{
+  "input": {
+    "schema_version": "1.0",
+    "request": {"evaluated_at":"2026-11-10T10:00:00Z","action":{"type":"RECONCILE_MERCHANT_ORDER","params":{"amount_minor":4900,"currency":"USD"}}},
+    "case": {"id":"case-1","case_number":"FR-10042","status":"INVESTIGATING"},
+    "actor": {"id":"user-1","type":"MERCHANT_USER","merchant_id":"MER-501","permissions":["reconcile"]},
+    "merchant": {"id":"MER-501","active":true},
+    "facts": {
+      "provider": {"name":"PAYPAL","status":"COMPLETED","amount_minor":4900,"currency":"USD","source":"PAYPAL_API","fetched_at":"2026-11-10T09:59:40Z"},
+      "order": {"status":"PAYMENT_PENDING","amount_minor":4900,"currency":"USD","source":"MERCHANT_API","fetched_at":"2026-11-10T09:59:41Z"},
+      "webhook": {"signature_verified":true,"event_count":1}
+    },
+    "execution": {"already_executed":false},
+    "risk": {"severity":"MEDIUM","anomaly_score":0.97},
+    "approvals": [], "applicability": []
+  }
+}' | python -m json.tool
+```
+
+Verified outcomes for that payload (score `0.97`):
+
+| Policy bundle | Facts | Outcome |
+|---|---|---|
+| shipped (`enabled := false`) | as above | `ALLOW` — score ignored (disabled ≡ Phase 10) |
+| `enabled := true` | as above | `REQUIRE_APPROVAL`, finding `RSK-002`, approver `MERCHANT_ADMIN` |
+| `enabled := true` | `signature_verified: false` | `BLOCK` — a high score never rescues a bad signature |
+| `enabled := true` | provider fetched an hour earlier | `WAIT` — evidence gates stay intact |
+| `enabled := true` | `anomaly_score: null` | `ALLOW` — unscored ≡ Phase 10 |
+
+### Guarantees (tested)
+
+- **Disabled ≡ Phase 10:** `policies/tests/anomaly_test.rego` +
+  `TestDisabledScorerReturnsNullScore` + `TestHandlerDisabledSendsNullScoreToOPA`.
+- **High score → `REQUIRE_APPROVAL`, `MERCHANT_ADMIN`:** `RSK-002` tests.
+- **`BLOCK` never becomes `ALLOW`:** invalid signature / amount mismatch with
+  score `0.99` stay `BLOCK`.
+- **Fail-closed:** OPA unreachable / HTTP 500 / malformed body / invalid
+  outcome → `BLOCK` (`internal/policy` tests).
+- **No cross-tenant mixing:** feature extraction rejects mismatched merchants
+  (`ErrTenantMismatch` / `TenantMismatchError`); score lookups are always
+  scoped to the case's merchant.
+- **Admin-only UI:** the anomaly card/field appears only for
+  `PLATFORM_ADMIN` or `MERCHANT_ADMIN` while enabled — never for customers or
+  merchant staff.
+
+### Data provenance
+
+Training and evaluation use **synthetic** events
+(`investigator/app/anomaly/synthetic.py`, `data_origin: "SYNTHETIC"`). All
+metrics in `api/internal/anomaly/artifacts/evaluation_report.json` are
+held-out synthetic metrics and must never be presented as real-world accuracy.
+See the model card: [`investigator/app/anomaly/README.md`](investigator/app/anomaly/README.md).
+
 ---
 
 ## Development
@@ -297,13 +425,13 @@ External references: [PayPal Webhooks](https://developer.paypal.com/api/rest/web
 ## Roadmap
 
 - **Core:** shared case, verified webhooks, evidence pipeline, AI investigation, PolicyGuard, idempotent execution, web UI.
-- **Optional:** operational anomaly detection that can only tighten decisions; proactive reconciler; root-cause grouping across cases.
+- **Optional:** operational anomaly detection that can only tighten decisions *(shipped: Phase 11)*; proactive reconciler; root-cause grouping across cases.
 - **Later:** additional providers behind the `Provider` interface, legally reviewed jurisdiction packs, production hardening.
 
 ## Known limitations
 
 - Sandbox only; Sandbox behavior can differ from live PayPal.
-- Anomaly models, if built, train on synthetic data plus your own Sandbox runs.
+- Anomaly models train on synthetic data plus your own Sandbox runs; exported metrics are synthetic-only and are labeled as such.
 - No jurisdiction policy pack is enabled. FRACTAL makes no regulatory compliance claims.
 - The mock merchant stands in for a real merchant integration. Real merchants must implement the merchant integration contract in the spec.
 
