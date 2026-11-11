@@ -10,16 +10,19 @@ up:
 down:
 	docker compose -f $(COMPOSE) down
 
+UP_MIGRATIONS := $(shell find $(API_DIR)/migrations -name '*.up.sql' | sort)
+DOWN_MIGRATIONS := $(shell find $(API_DIR)/migrations -name '*.down.sql' | sort)
+
 migrate-up:
 	@set -e; \
-	for f in $$(ls $(API_DIR)/migrations/*_up.sql | sort); do \
+	for f in $(UP_MIGRATIONS); do \
 		echo "==> $$f"; \
 		psql "$(DB_URL)" -f "$$f"; \
 	done
 
 migrate-down:
 	@set -e; \
-	for f in $$(ls $(API_DIR)/migrations/*_down.sql | sort -r); do \
+	for f in $(DOWN_MIGRATIONS); do \
 		echo "==> $$f"; \
 		psql "$(DB_URL)" -f "$$f" || true; \
 	done
