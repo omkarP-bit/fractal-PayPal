@@ -54,5 +54,18 @@ func main() {
 		FROM merchants m WHERE m.legal_name = 'Acme Store'
 		ON CONFLICT (provider, environment, external_account_id) DO NOTHING`)
 
+	// Link merchant users to the Acme Store merchant
+	must(`INSERT INTO merchant_members (merchant_id, user_id, role, permissions)
+		SELECT m.id, u.id, 'MERCHANT_ADMIN', ARRAY['reconcile','refund']
+		FROM merchants m, users u
+		WHERE m.legal_name = 'Acme Store' AND u.email = 'ops@acme.com'
+		ON CONFLICT (merchant_id, user_id) DO NOTHING`)
+
+	must(`INSERT INTO merchant_members (merchant_id, user_id, role, permissions)
+		SELECT m.id, u.id, 'MERCHANT_STAFF', ARRAY['reconcile']
+		FROM merchants m, users u
+		WHERE m.legal_name = 'Acme Store' AND u.email = 'staff@acme.com'
+		ON CONFLICT (merchant_id, user_id) DO NOTHING`)
+
 	logger.Info("seed complete", "claim_token_hash", tokenHash)
 }
