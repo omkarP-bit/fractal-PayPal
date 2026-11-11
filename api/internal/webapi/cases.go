@@ -750,6 +750,20 @@ func (h *Handlers) CreateCase(w http.ResponseWriter, r *http.Request) {
 		LIMIT 1`,
 		orderRef, email, sha256Hex([]byte(token)), merchantFilter).Scan(&tokenID, &merchantID)
 	if errors.Is(err, pgx.ErrNoRows) {
+		var reason string
+		_ = h.DB.QueryRow(r.Context(), `
+			SELECT CASE
+				WHEN consumed_at IS NOT NULL THEN 'consumed'
+				WHEN expires_at <= now() THEN 'expired'
+				ELSE 'not_found' END
+			FROM order_claim_tokens
+			WHERE merchant_order_ref = $1 AND customer_email = $2 AND token_hash = $3
+			ORDER BY expires_at DESC LIMIT 1`,
+			orderRef, email, sha256Hex([]byte(token))).Scan(&reason)
+		if reason == "" {
+			reason = "no_token_for_order_and_email"
+		}
+		h.Log.Warn("claim code rejected", "order_ref", orderRef, "email", email, "reason", reason)
 		writeProblem(w, http.StatusForbidden, "Claim code not valid",
 			"That claim code is not valid for this order, or it has expired.")
 		return
