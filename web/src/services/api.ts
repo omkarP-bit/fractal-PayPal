@@ -107,6 +107,14 @@ class ApiClient {
     return response.json();
   }
 
+  // Auth
+  async devLogin(role: 'CUSTOMER' | 'MERCHANT', email?: string): Promise<{ token: string; user: any }> {
+    return this.request<{ token: string; user: any }>('/api/v1/auth/dev-login', {
+      method: 'POST',
+      body: JSON.stringify({ role, email }),
+    });
+  }
+
   // Cases
   async getCases(): Promise<Case[]> {
     return this.request<Case[]>('/api/v1/cases');
