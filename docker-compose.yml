@@ -98,7 +98,9 @@ services:
       context: ./web
       dockerfile: Dockerfile
     ports:
-      - "5173:80"
+      - "5173:5173"
+    environment:
+      - VITE_API_BASE=http://fractal-api:8080
     depends_on:
       - fractal-api
 
