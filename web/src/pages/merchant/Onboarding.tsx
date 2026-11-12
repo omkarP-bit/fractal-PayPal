@@ -254,10 +254,12 @@ function ConnectedPanel({
   account,
   onReRegister,
   reRegistering,
+  onUpdateCredentials,
 }: {
   account: ProviderAccountSummary;
   onReRegister: () => void;
   reRegistering: boolean;
+  onUpdateCredentials: () => void;
 }) {
   return (
     <section className="panel-flush min-w-0 overflow-hidden">
@@ -281,6 +283,19 @@ function ConnectedPanel({
               </>
             ) : (
               <span className="text-meta text-muted">Not registered</span>
+            )}
+          </dd>
+        </div>
+        <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
+          <dt className="meta-label">PayPal Client ID</dt>
+          <dd className="flex min-w-0 items-center gap-2">
+            {account.client_id ? (
+              <>
+                <span className="truncate font-mono text-[12px] text-ink">{account.client_id}</span>
+                <CopyChip value={account.client_id} label="Copy" title="Copy Client ID" />
+              </>
+            ) : (
+              <span className="text-meta text-muted">Using deployment credentials</span>
             )}
           </dd>
         </div>
@@ -321,10 +336,14 @@ function ConnectedPanel({
         >
           Re-register webhook
         </Button>
-        <span className="text-meta text-muted">
-          Use this if the webhook was deleted in PayPal or the public URL changed.
-        </span>
+        <Button variant="outline" size="sm" onClick={onUpdateCredentials}>
+          Update credentials
+        </Button>
       </div>
+      <p className="border-t-2 border-line px-4 py-3 text-[11px] leading-5 text-muted">
+        The Client ID is shown above. The Secret is stored encrypted and can never be displayed. To rotate it, generate a
+        new Secret in the PayPal app and choose <span className="font-bold text-ink">Update credentials</span>.
+      </p>
     </section>
   );
 }
@@ -594,6 +613,7 @@ export function MerchantOnboardingPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [reRegistering, setReRegistering] = useState(false);
+  const [showCredentials, setShowCredentials] = useState(false);
   const navigate = useNavigate();
 
   const load = async () => {
@@ -687,14 +707,15 @@ export function MerchantOnboardingPage() {
                 account={status.provider_account}
                 onReRegister={() => void reRegister()}
                 reRegistering={reRegistering}
+                onUpdateCredentials={() => setShowCredentials(true)}
               />
             ) : null}
 
-            {!status.ready ? (
+            {!status.ready || showCredentials ? (
               <section className="brut-panel rounded border-2 border-line bg-surface p-5 shadow-hard-lg sm:p-6">
                 <div className="mb-4 flex items-start gap-3 border-b-2 border-line pb-4">
                   <PlugZap className="mt-0.5 h-5 w-5 text-ink" aria-hidden="true" strokeWidth={2.5} />
-                  <div>
+                  <div className="min-w-0">
                     <h2 className="text-section font-bold text-ink">
                       {status.provider_account ? 'Update PayPal credentials' : 'Connect PayPal'}
                     </h2>
@@ -702,10 +723,16 @@ export function MerchantOnboardingPage() {
                       Submitting again keeps the same provider account ID, so the webhook URL stays stable.
                     </p>
                   </div>
+                  {status.ready && showCredentials && (
+                    <Button variant="ghost" size="sm" className="ml-auto shrink-0" onClick={() => setShowCredentials(false)}>
+                      Cancel
+                    </Button>
+                  )}
                 </div>
                 {error && <ErrorNotice title="PayPal setup failed" description={error} className="mb-4" />}
                 <PayPalForm
                   onConnected={(account) => {
+                    setShowCredentials(false);
                     setStatus((current) =>
                       current
                         ? {
