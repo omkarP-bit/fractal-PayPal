@@ -48,3 +48,16 @@ func TestCORSLeavesRequestsWithoutOriginAlone(t *testing.T) {
 		t.Fatalf("Access-Control-Allow-Origin = %q, want empty", got)
 	}
 }
+
+func TestDevLoginIsOffUnlessExplicitlyEnabled(t *testing.T) {
+	t.Setenv("FRACTAL_DEV_LOGIN_ENABLED", "")
+	h := &Handlers{}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/dev-login", strings.NewReader(`{"email":"seeded@example.com"}`))
+	rec := httptest.NewRecorder()
+
+	h.DevLogin(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusNotFound)
+	}
+}

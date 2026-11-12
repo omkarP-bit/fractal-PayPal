@@ -1,4 +1,4 @@
-.PHONY: up down seed mint-claim webhook-sync test demo lint migrate-up migrate-down test-negative test-concurrency
+.PHONY: up down seed mint-claim webhook-sync test demo lint migrate-up migrate-down set-password test-negative test-concurrency
 
 COMPOSE := docker-compose.yml
 API_DIR := api
@@ -31,6 +31,9 @@ mint-claim:
 
 webhook-sync:
 	@python3 scripts/paypal_webhook.py
+
+set-password:
+	@cd $(API_DIR) && DATABASE_URL="$(DB_URL)" go run ./cmd/setpassword "$(EMAIL)" "$(PASSWORD)"
 
 test:
 	@cd $(API_DIR) && go test ./...

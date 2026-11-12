@@ -139,6 +139,7 @@ Fill in `.env`:
 | `FRACTAL_PUBLIC_URL` | Public origin used to build webhook URLs, for example `https://fractal.onrender.com` |
 | `PUBLIC_TUNNEL_URL` | Local fallback origin when you run FRACTAL behind a tunnel; must be HTTPS |
 | `RENDER_EXTERNAL_URL` | Set automatically by Render. Used as the fallback public origin when `FRACTAL_PUBLIC_URL` is unset. |
+| `FRACTAL_DEV_LOGIN_ENABLED` | Local-only passwordless role switcher. `docker compose` enables it; deployed instances keep it off. |
 | `KIBANA_URL` | Live Kibana dashboard URL shown on `/demo` |
 | `DATABASE_URL` | PostgreSQL connection string |
 | `OPA_URL` | OPA server address |

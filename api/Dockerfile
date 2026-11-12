@@ -10,7 +10,8 @@ COPY api/go.mod api/go.sum ./
 RUN go mod download
 COPY api/ ./
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/fractal-api ./cmd/fractal-api \
- && CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/migrate ./cmd/migrate
+ && CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/migrate ./cmd/migrate \
+ && CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/setpassword ./cmd/setpassword
 
 # Copy a static OPA binary. Embedding the policy engine means the API needs a
 # single service on Render instead of a separate paid private service per
@@ -24,6 +25,7 @@ RUN apk add --no-cache ca-certificates tzdata
 WORKDIR /app
 COPY --from=api-builder /out/fractal-api /bin/fractal-api
 COPY --from=api-builder /out/migrate /bin/migrate
+COPY --from=api-builder /out/setpassword /bin/setpassword
 COPY --from=opa /opa /opa
 COPY policies/ /policies/
 COPY api/scripts/entrypoint.sh /app/entrypoint.sh

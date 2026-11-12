@@ -157,6 +157,25 @@ psql "$RENDER_EXTERNAL_DATABASE_URL" -f /tmp/fractal-demo.sql
 Then re-register the merchant webhook as in step 4 (the imported row still has
 the tunnel URL) and restart the API so cached credentials are re-read.
 
+### Sign in to the imported demo
+
+Seeded demo users have no password hash; they normally use the local dev-login
+shortcut. That shortcut is disabled on Render (`FRACTAL_DEV_LOGIN_ENABLED=false`)
+so nobody can impersonate an account by knowing its email. Set a password for
+the accounts you need:
+
+```bash
+# Option A: Render Shell for fractal-api (if available on your plan)
+/bin/setpassword owner@example.com 'choose-a-long-password'
+
+# Option B: from your machine, with your IP temporarily allowed on Postgres
+DATABASE_URL="$RENDER_EXTERNAL_DATABASE_URL" \
+  make set-password EMAIL=owner@example.com PASSWORD='choose-a-long-password'
+```
+
+Use the normal email + password form on the login page. Leave the password field
+empty only in local development, where the role switcher uses dev-login.
+
 Secrets in the dump are encrypted with your local
 `FRACTAL_ENCRYPTION_KEY`. For the demo merchant this is irrelevant: it uses the
 platform PayPal app, which reads `PAYPAL_CLIENT_ID`/`PAYPAL_CLIENT_SECRET` from
@@ -200,6 +219,10 @@ Required on the API:
 Optional: `FRACTAL_ANOMALY_ENABLED` (default `false`), `KIBANA_URL`,
 `OTEL_ENDPOINT`, `LLM_API_KEY` (set on the investigator only).
 
+`FRACTAL_DEV_LOGIN_ENABLED` is `false` on Render and `true` in
+`docker-compose.yml`. Never enable it on an instance reachable by untrusted
+users: it issues tokens for passwordless seeded accounts without a password.
+
 ## Troubleshooting
 
 **Migrations.** The API entrypoint runs `/bin/migrate` on every boot. It holds a
@@ -218,3 +241,7 @@ and confirm the URL in `provider_accounts`.
 
 **Build cache.** `VITE_API_BASE` is a build-time value. Changing the API URL
 requires a new static-site deploy, not just a restart.
+
+**Cannot sign in to a deployed demo.** The role switcher uses the dev-login
+endpoint, which is disabled on Render. Set a password for the account (see
+step 5) and use the email/password form.
