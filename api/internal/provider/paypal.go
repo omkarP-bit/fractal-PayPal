@@ -70,8 +70,12 @@ func (p *PayPal) accessToken(ctx context.Context) (string, error) {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
-		return "", fmt.Errorf("paypal token request: status %d", resp.StatusCode)
+		var out struct {
+			Error            string `json:"error"`
+			ErrorDescription string `json:"error_description"`
+		}
+		_ = json.NewDecoder(io.LimitReader(resp.Body, 16<<10)).Decode(&out)
+		return "", &APIError{Status: resp.StatusCode, Name: out.Error, Message: out.ErrorDescription}
 	}
 	var out struct {
 		AccessToken string `json:"access_token"`

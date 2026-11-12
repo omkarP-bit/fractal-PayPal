@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
+	"os"
 	"regexp"
 	"strings"
 	"time"
@@ -273,6 +275,14 @@ func (h *Handlers) ConnectPayPal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// PayPal rejects localhost and plain-HTTP webhook URLs. Check the origin
+	// before storing an account so the error is actionable and no half-created
+	// provider account is left behind.
+	if _, err := h.publicBaseURL(r); err != nil {
+		writeProblem(w, http.StatusBadRequest, "Public webhook URL required", err.Error())
+		return
+	}
+
 	if h.Secrets == nil {
 		writeProblem(w, http.StatusServiceUnavailable, "Onboarding unavailable", "Credential encryption is not configured.")
 		return
@@ -334,12 +344,26 @@ func (h *Handlers) ConnectPayPal(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	webhookURL := h.webhookURL(r, accountID)
+	webhookURL, err := h.webhookURL(r, accountID)
+	if err != nil {
+		writeProblem(w, http.StatusBadRequest, "Public webhook URL required", err.Error())
+		return
+	}
 	account, err := h.registerWebhook(r.Context(), accountID, environment, clientID, clientSecret, webhookURL)
 	if err != nil {
-		h.Log.Warn("paypal webhook registration failed", "account", accountID, "err", err)
-		writeProblem(w, http.StatusBadGateway, "PayPal rejected the connection",
-			"PayPal did not accept the credentials or the webhook registration. Check the app's sandbox credentials and try again. "+safeError(err))
+		h.Log.Warn("paypal webhook registration failed", "account", accountID, "url", webhookURL, "err", err)
+		var apiErr *provider.APIError
+		switch {
+		case errors.As(err, &apiErr) && apiErr.Status == http.StatusUnauthorized:
+			writeProblem(w, http.StatusBadGateway, "PayPal rejected the app credentials",
+				"PayPal did not recognise this Client ID and Secret. Create a sandbox REST app in the PayPal Developer Dashboard and paste that app's credentials. "+safeError(err))
+		case errors.As(err, &apiErr) && apiErr.Status == http.StatusBadRequest:
+			writeProblem(w, http.StatusBadGateway, "PayPal rejected the webhook URL",
+				"PayPal accepted the credentials but not the webhook address. It must be a public HTTPS URL. "+safeError(err))
+		default:
+			writeProblem(w, http.StatusBadGateway, "PayPal rejected the connection",
+				"PayPal did not accept the credentials or the webhook registration. Check the app's sandbox credentials and try again. "+safeError(err))
+		}
 		return
 	}
 
@@ -392,8 +416,19 @@ func (h *Handlers) ReRegisterWebhook(w http.ResponseWriter, r *http.Request) {
 		writeProblem(w, http.StatusInternalServerError, "Could not read credentials", "Stored credentials could not be decrypted.")
 		return
 	}
-	if webhookURL == "" {
-		webhookURL = h.webhookURL(r, accountID)
+	stored := strings.TrimRight(strings.TrimSpace(webhookURL), "/")
+	derived, derr := h.webhookURL(r, accountID)
+	switch {
+	case derr == nil:
+		// The configured origin wins, so a new tunnel/public URL is applied.
+		webhookURL = derived
+	case stored != "" && isPublicHTTPSURL(stored):
+		// The merchant is re-registering from localhost but already has a
+		// working public registration; keep it instead of downgrading it.
+		webhookURL = stored
+	default:
+		writeProblem(w, http.StatusBadRequest, "Public webhook URL required", derr.Error())
+		return
 	}
 
 	account, err := h.registerWebhook(r.Context(), accountID, environment, clientID, secret, webhookURL)
@@ -570,23 +605,84 @@ func (h *Handlers) requireMerchantAdmin(w http.ResponseWriter, r *http.Request) 
 	return claims, claims.MerchantID, true
 }
 
-func (h *Handlers) webhookURL(r *http.Request, accountID string) string {
+// publicBaseURL returns the externally reachable origin used to build PayPal
+// webhook URLs. PayPal only accepts public HTTPS URLs, so a localhost or
+// plain-HTTP origin fails here with an actionable message instead of becoming
+// an opaque "Invalid data" error from PayPal.
+func (h *Handlers) publicBaseURL(r *http.Request) (string, error) {
 	base := strings.TrimRight(strings.TrimSpace(h.PublicBaseURL), "/")
 	if base == "" {
-		scheme := "https"
-		if r.TLS == nil && strings.TrimSpace(r.Header.Get("X-Forwarded-Proto")) == "" {
-			scheme = "http"
+		// Local development keeps the tunnel origin in PUBLIC_TUNNEL_URL.
+		base = strings.TrimRight(strings.TrimSpace(os.Getenv("PUBLIC_TUNNEL_URL")), "/")
+	}
+	if base == "" {
+		scheme := "http"
+		if r.TLS != nil {
+			scheme = "https"
 		}
-		if proto := strings.TrimSpace(r.Header.Get("X-Forwarded-Proto")); proto != "" {
+		if proto := firstHeaderToken(r.Header.Get("X-Forwarded-Proto")); proto != "" {
 			scheme = proto
 		}
-		host := strings.TrimSpace(r.Header.Get("X-Forwarded-Host"))
+		host := firstHeaderToken(r.Header.Get("X-Forwarded-Host"))
 		if host == "" {
 			host = r.Host
 		}
-		base = scheme + "://" + host
+		if host != "" {
+			base = scheme + "://" + host
+		}
 	}
-	return base + "/webhooks/paypal/" + accountID
+	if base == "" {
+		return "", errors.New("no public app URL is configured. Set FRACTAL_PUBLIC_URL to the app's HTTPS origin.")
+	}
+	return validatePublicBaseURL(base)
+}
+
+func validatePublicBaseURL(base string) (string, error) {
+	parsed, err := url.Parse(base)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return "", fmt.Errorf("FRACTAL_PUBLIC_URL %q is not a valid absolute URL", base)
+	}
+	if path := strings.Trim(parsed.EscapedPath(), "/"); path != "" {
+		return "", errors.New("FRACTAL_PUBLIC_URL must be an origin such as https://fractal.example.com, without a path")
+	}
+	if err := validatePublicHTTPS(parsed); err != nil {
+		return "", err
+	}
+	return strings.TrimRight(base, "/"), nil
+}
+
+func validatePublicHTTPS(parsed *url.URL) error {
+	if !strings.EqualFold(parsed.Scheme, "https") {
+		return fmt.Errorf("PayPal requires an HTTPS webhook URL, but the app origin is %s. Set FRACTAL_PUBLIC_URL to the app's public HTTPS origin; for local testing use your tunnel URL.", parsed.String())
+	}
+	switch strings.ToLower(parsed.Hostname()) {
+	case "localhost", "127.0.0.1", "::1", "0.0.0.0":
+		return fmt.Errorf("PayPal cannot deliver webhooks to %s. Set FRACTAL_PUBLIC_URL to the app's public HTTPS origin; for local testing use your tunnel URL.", parsed.String())
+	}
+	return nil
+}
+
+func isPublicHTTPSURL(raw string) bool {
+	parsed, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || parsed.Host == "" {
+		return false
+	}
+	return validatePublicHTTPS(parsed) == nil
+}
+
+func firstHeaderToken(value string) string {
+	if i := strings.IndexByte(value, ','); i >= 0 {
+		value = value[:i]
+	}
+	return strings.TrimSpace(value)
+}
+
+func (h *Handlers) webhookURL(r *http.Request, accountID string) (string, error) {
+	base, err := h.publicBaseURL(r)
+	if err != nil {
+		return "", err
+	}
+	return base + "/webhooks/paypal/" + accountID, nil
 }
 
 func safeError(err error) string {

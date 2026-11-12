@@ -2,6 +2,7 @@ package provider
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -239,5 +240,29 @@ func TestPayPalEnsureWebhookReusesExistingURL(t *testing.T) {
 	}
 	if wh.ID != "WH-OLD" {
 		t.Fatalf("webhook id = %q, want WH-OLD", wh.ID)
+	}
+}
+
+func TestPayPalAccessTokenErrorIsAPIError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		w.Write([]byte(`{"error":"invalid_client","error_description":"Client Authentication failed"}`))
+	}))
+	defer srv.Close()
+
+	p := NewPayPal(srv.URL, "client-id", "client-secret", nil)
+	p.HTTP = srv.Client()
+
+	_, err := p.accessToken(context.Background())
+	var apiErr *APIError
+	if !errors.As(err, &apiErr) {
+		t.Fatalf("expected *APIError, got %T: %v", err, err)
+	}
+	if apiErr.Status != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401", apiErr.Status)
+	}
+	if apiErr.Name != "invalid_client" {
+		t.Fatalf("name = %q, want invalid_client", apiErr.Name)
 	}
 }
