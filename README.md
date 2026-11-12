@@ -138,6 +138,7 @@ Fill in `.env`:
 | `FRACTAL_ENCRYPTION_KEY` | Application key that seals merchant PayPal secrets at rest. Use a random 32-byte value in production. |
 | `FRACTAL_PUBLIC_URL` | Public origin used to build webhook URLs, for example `https://fractal.onrender.com` |
 | `PUBLIC_TUNNEL_URL` | Local fallback origin when you run FRACTAL behind a tunnel; must be HTTPS |
+| `RENDER_EXTERNAL_URL` | Set automatically by Render. Used as the fallback public origin when `FRACTAL_PUBLIC_URL` is unset. |
 | `KIBANA_URL` | Live Kibana dashboard URL shown on `/demo` |
 | `DATABASE_URL` | PostgreSQL connection string |
 | `OPA_URL` | OPA server address |
@@ -152,9 +153,11 @@ Never commit `.env`. Use Sandbox credentials only.
 
 ```bash
 make up        # postgres, opa, elasticsearch, kibana, api, investigator, merchant-store, web
-make migrate-up # apply database migrations
 make seed      # users, merchant, provider account, products, policy bundle record
 ```
+
+The API applies database migrations on boot, so `make migrate-up` is only
+needed if you run the API outside Docker.
 
 ### 3. Onboard a merchant (self-service, one click)
 
@@ -219,6 +222,25 @@ The seeded provider account ID is `00000000-0000-0000-0000-0000000000c2` (`provi
 | Kibana (live logs and traces) | http://localhost:5601 |
 
 Seeded dev users (change in `scripts/seed`): one customer, one merchant admin, one merchant staff, one platform admin. Use the role switcher on the login page.
+
+---
+
+## Deploy to Render
+
+The repository includes a [Render Blueprint](render.yaml) that provisions
+Postgres, the API (with OPA embedded), the merchant store, the investigator and
+the static web UI.
+
+1. Push the repository to GitHub.
+2. In Render choose **New → Blueprint** and select the repo.
+3. Enter the `sync: false` PayPal values from your local `.env` in the dashboard.
+4. After the first deploy, re-register the merchant webhook from **PayPal setup**
+   (or `POST /api/v1/onboarding/paypal/re-register`).
+
+No cloudflared tunnel is needed: the API and store use Render's stable
+`RENDER_EXTERNAL_URL`, and the API applies migrations and starts its embedded
+OPA server on boot. The full walkthrough, demo-data import and free-tier
+caveats are in [docs/DEPLOY_RENDER.md](docs/DEPLOY_RENDER.md).
 
 ---
 
@@ -504,6 +526,7 @@ fractal/
   scripts/            seed, replay, load test
   docs/               Master document, spec, development plan
   docker-compose.yml
+  render.yaml         Render Blueprint (Postgres + four services)
   Makefile
 ```
 

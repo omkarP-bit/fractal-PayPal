@@ -1,0 +1,21 @@
+# Build context for the API image is the repository root because the image
+# embeds policies/ and the OPA binary.
+.git
+.gitignore
+.env
+.env.*
+*.md
+
+# Node
+**/node_modules
+web/dist
+
+# Python
+**/__pycache__
+**/*.pyc
+.pytest_cache
+
+# Go build artefacts and local data
+merchant-store/merchant-store
+merchant-store/orders.json
+tmp

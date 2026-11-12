@@ -50,10 +50,7 @@ type Handlers struct {
 }
 
 func New(db *pgxpool.Pool, log *slog.Logger, policyClient *policy.Client, paypal *provider.PayPal, anomalyEnabled bool) *Handlers {
-	base := strings.TrimRight(os.Getenv("MERCHANT_STORE_BASE"), "/")
-	if base == "" {
-		base = "http://localhost:8090"
-	}
+	base := serviceBaseURL(os.Getenv("MERCHANT_STORE_BASE"), "http://localhost:8090")
 	collector := evidence.NewCollector(db, paypal, merchantAPI{
 		base:   base,
 		client: &http.Client{Timeout: 12 * time.Second},
@@ -66,7 +63,7 @@ func New(db *pgxpool.Pool, log *slog.Logger, policyClient *policy.Client, paypal
 		Policy:                    policyClient,
 		PayPal:                    paypal,
 		Collector:                 collector,
-		Investigator:              investigator.New(os.Getenv("INVESTIGATOR_URL"), os.Getenv("INVESTIGATOR_TOKEN")),
+		Investigator:              investigator.New(serviceBaseURL(os.Getenv("INVESTIGATOR_URL"), ""), os.Getenv("INVESTIGATOR_TOKEN")),
 		AnomalyEnabled:            anomalyEnabled,
 		MerchantIntegrationSecret: os.Getenv("MERCHANT_INTEGRATION_SECRET"),
 		Assistant:                 assistant.New(db, log, assistant.ConfigFromEnv()),
@@ -116,6 +113,20 @@ func (m merchantAPI) GetOrder(ctx context.Context, ref string) (evidence.OrderSn
 		Currency:    raw.Currency,
 		FetchedAt:   fetchedAt,
 	}, nil
+}
+
+// serviceBaseURL trims a service origin and adds http:// when the value is a
+// bare "host:port", which is what Render's private-network service references
+// (property: hostport) provide.
+func serviceBaseURL(raw, fallback string) string {
+	value := strings.TrimRight(strings.TrimSpace(raw), "/")
+	if value == "" {
+		return fallback
+	}
+	if !strings.Contains(value, "://") {
+		value = "http://" + value
+	}
+	return value
 }
 
 func CORS(next http.Handler) http.Handler {

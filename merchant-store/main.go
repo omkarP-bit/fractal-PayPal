@@ -70,6 +70,10 @@ func main() {
 
 	addr := os.Getenv("MERCHANT_PORT")
 	if addr == "" {
+		// Render injects PORT and expects the service to bind to it.
+		addr = os.Getenv("PORT")
+	}
+	if addr == "" {
 		addr = "8090"
 	}
 	slog.Info("merchant-store listening", "port", addr)
@@ -147,6 +151,10 @@ func startCheckout(w http.ResponseWriter, r *http.Request, email string, amountM
 	}
 
 	publicBase := os.Getenv("MERCHANT_PUBLIC_URL")
+	if publicBase == "" {
+		// On Render the service's stable public origin replaces the tunnel.
+		publicBase = os.Getenv("RENDER_EXTERNAL_URL")
+	}
 	if publicBase == "" {
 		publicBase = "http://localhost:8090"
 	}

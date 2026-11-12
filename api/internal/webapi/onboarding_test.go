@@ -42,6 +42,7 @@ func TestPublicBaseURLRejectsLocalhostConfig(t *testing.T) {
 
 func TestPublicBaseURLRejectsPlainLocalhostRequest(t *testing.T) {
 	t.Setenv("PUBLIC_TUNNEL_URL", "")
+	t.Setenv("RENDER_EXTERNAL_URL", "")
 	h := &Handlers{}
 	req := httptest.NewRequest("POST", "http://localhost:8080/api/v1/onboarding/paypal", nil)
 
@@ -53,6 +54,7 @@ func TestPublicBaseURLRejectsPlainLocalhostRequest(t *testing.T) {
 
 func TestPublicBaseURLUsesForwardedHTTPS(t *testing.T) {
 	t.Setenv("PUBLIC_TUNNEL_URL", "")
+	t.Setenv("RENDER_EXTERNAL_URL", "")
 	h := &Handlers{}
 	req := httptest.NewRequest("POST", "http://localhost:8080/api/v1/onboarding/paypal", nil)
 	req.Host = "internal:8080"
@@ -78,6 +80,21 @@ func TestPublicBaseURLFallsBackToTunnelEnv(t *testing.T) {
 		t.Fatalf("publicBaseURL: %v", err)
 	}
 	if base != "https://tunnel.example.com" {
+		t.Fatalf("base = %q", base)
+	}
+}
+
+func TestPublicBaseURLFallsBackToRenderExternalURL(t *testing.T) {
+	t.Setenv("PUBLIC_TUNNEL_URL", "")
+	t.Setenv("RENDER_EXTERNAL_URL", "  https://fractal-api.onrender.com/  ")
+	h := &Handlers{}
+	req := httptest.NewRequest("POST", "http://localhost:8080/api/v1/onboarding/paypal", nil)
+
+	base, err := h.publicBaseURL(req)
+	if err != nil {
+		t.Fatalf("publicBaseURL: %v", err)
+	}
+	if base != "https://fractal-api.onrender.com" {
 		t.Fatalf("base = %q", base)
 	}
 }

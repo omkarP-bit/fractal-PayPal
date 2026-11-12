@@ -10,15 +10,10 @@ up:
 down:
 	docker compose -f $(COMPOSE) down
 
-UP_MIGRATIONS := $(shell find $(API_DIR)/migrations -name '*.up.sql' | sort)
 DOWN_MIGRATIONS := $(shell find $(API_DIR)/migrations -name '*.down.sql' | sort)
 
 migrate-up:
-	@set -e; \
-	for f in $(UP_MIGRATIONS); do \
-		echo "==> $$f"; \
-		psql "$(DB_URL)" -f "$$f"; \
-	done
+	@cd $(API_DIR) && DATABASE_URL="$(DB_URL)" go run ./cmd/migrate
 
 migrate-down:
 	@set -e; \
@@ -43,7 +38,7 @@ test:
 
 demo:
 	@echo "=== FRACTAL Demo Script ==="
-	@echo "1. Start stack:   make up"
+	@echo "1. Start stack:   make up   (the API applies migrations on boot)"
 	@echo "2. Migrations:    make migrate-up"
 	@echo "3. Seed data:     make seed"
 	@echo "4. Merchant store: http://localhost:8090"

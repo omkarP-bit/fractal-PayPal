@@ -53,8 +53,8 @@ services:
 
   fractal-api:
     build:
-      context: ./api
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: api/Dockerfile
     ports:
       - "8080:8080"
     environment:

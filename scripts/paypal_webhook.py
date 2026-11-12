@@ -28,7 +28,7 @@ def load_env():
             if line and not line.startswith("#") and "=" in line:
                 key, value = line.split("=", 1)
                 env[key.strip()] = value.strip()
-    env.update({k: v for k, v in os.environ.items() if k.startswith("PAYPAL_") or k in ("PUBLIC_TUNNEL_URL", "PROVIDER_ACCOUNT_ID")})
+    env.update({k: v for k, v in os.environ.items() if k.startswith("PAYPAL_") or k in ("PUBLIC_TUNNEL_URL", "FRACTAL_PUBLIC_URL", "PROVIDER_ACCOUNT_ID")})
     return env
 
 
@@ -61,9 +61,9 @@ def access_token(env):
 
 def main():
     env = load_env()
-    tunnel = env.get("PUBLIC_TUNNEL_URL", "").rstrip("/")
+    tunnel = (env.get("FRACTAL_PUBLIC_URL") or env.get("PUBLIC_TUNNEL_URL") or "").rstrip("/")
     if not tunnel:
-        sys.exit("PUBLIC_TUNNEL_URL is not set in .env")
+        sys.exit("FRACTAL_PUBLIC_URL (or PUBLIC_TUNNEL_URL) is not set in .env")
     account = env.get("PROVIDER_ACCOUNT_ID", DEFAULT_ACCOUNT)
     url = f"{tunnel}/api/v1/webhooks/paypal/{account}"
     token = access_token(env)
