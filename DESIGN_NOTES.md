@@ -204,6 +204,10 @@ icon source.
   main column for business/region and webhook status, plus a "What happens next" rail.
 - Secrets use `type="password"`, are cleared after submit, and are never echoed back.
   Connected state shows only the public webhook URL, webhook ID, environment and dates.
+- The connected panel also shows the stored (non-secret) Client ID with a copy button and
+  an **Update credentials** action. The Secret is encrypted and cannot be displayed, so
+  rotation means generating a new Secret in PayPal and reconnecting; the provider
+  account ID and webhook URL stay stable.
 - Long webhook URLs truncate inside their row and keep a copy chip.
 
 ### Login

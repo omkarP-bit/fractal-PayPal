@@ -177,6 +177,10 @@ The merchant's secret is never returned to the browser or written to logs. Each 
 and webhook registration. The receiver reads the account ID from the URL, loads that account's webhook ID and
 credentials, verifies the signature with that merchant's app, and stores `provider_account_id` on every event.
 
+After connecting, **PayPal setup** shows the stored **Client ID** with a copy button and the webhook status. The
+**Secret** is encrypted and can never be displayed. To rotate it, generate a new Secret in the PayPal app and choose
+**Update credentials**; the provider account ID and webhook URL stay the same.
+
 Existing merchants can reconnect or recover a deleted webhook from **PayPal setup** in the merchant navigation.
 
 ### 4. Legacy local tunnel (seeded demo account only)
