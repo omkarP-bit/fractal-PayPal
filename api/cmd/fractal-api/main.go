@@ -289,6 +289,7 @@ func main() {
 	mux.Handle("POST /api/v1/onboarding/signup", middleware(http.HandlerFunc(web.Signup)))
 	mux.Handle("GET /api/v1/onboarding/status", middleware(auth.RequireAuth(http.HandlerFunc(web.OnboardingStatus))))
 	mux.Handle("POST /api/v1/onboarding/paypal", middleware(auth.RequireAuth(http.HandlerFunc(web.ConnectPayPal))))
+	mux.Handle("POST /api/v1/onboarding/paypal/managed", middleware(auth.RequireAuth(http.HandlerFunc(web.ConnectManagedPayPal))))
 	mux.Handle("POST /api/v1/onboarding/paypal/re-register", middleware(auth.RequireAuth(http.HandlerFunc(web.ReRegisterWebhook))))
 	mux.Handle("GET /api/v1/observability/summary", middleware(auth.RequireAuth(http.HandlerFunc(web.ObservabilitySummary))))
 

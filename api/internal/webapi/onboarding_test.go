@@ -1,9 +1,12 @@
 package webapi
 
 import (
+	"errors"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"fractal/api/internal/provider"
 )
 
 func TestPublicBaseURLPrefersConfiguredHTTPSOrigin(t *testing.T) {
@@ -101,5 +104,80 @@ func TestIsPublicHTTPSURL(t *testing.T) {
 		if got := isPublicHTTPSURL(input); got != want {
 			t.Errorf("isPublicHTTPSURL(%q) = %v, want %v", input, got, want)
 		}
+	}
+}
+
+func TestPlatformPayPalUsesEnvironment(t *testing.T) {
+	t.Setenv("PAYPAL_CLIENT_ID", "platform-client-id")
+	t.Setenv("PAYPAL_CLIENT_SECRET", "platform-secret")
+	t.Setenv("PAYPAL_BASE_URL", "")
+
+	h := &Handlers{}
+	client, err := h.platformPayPal()
+	if err != nil {
+		t.Fatalf("platformPayPal: %v", err)
+	}
+	if client.ClientID != "platform-client-id" || client.ClientSecret != "platform-secret" {
+		t.Fatal("platformPayPal did not read the deployment credentials")
+	}
+	if client.BaseURL != provider.PayPalSandboxBaseURL {
+		t.Fatalf("base url = %q, want sandbox", client.BaseURL)
+	}
+}
+
+func TestPlatformPayPalPrefersConfiguredClient(t *testing.T) {
+	t.Setenv("PAYPAL_CLIENT_ID", "env-client")
+	t.Setenv("PAYPAL_CLIENT_SECRET", "env-secret")
+
+	configured := provider.NewPayPal(provider.PayPalSandboxBaseURL, "configured-client", "configured-secret", nil)
+	h := &Handlers{PayPal: configured}
+
+	client, err := h.platformPayPal()
+	if err != nil {
+		t.Fatalf("platformPayPal: %v", err)
+	}
+	if client != configured {
+		t.Fatal("platformPayPal should reuse the client built at startup")
+	}
+}
+
+func TestPlatformPayPalRequiresCredentials(t *testing.T) {
+	t.Setenv("PAYPAL_CLIENT_ID", "")
+	t.Setenv("PAYPAL_CLIENT_SECRET", "")
+
+	h := &Handlers{}
+	if _, err := h.platformPayPal(); err == nil {
+		t.Fatal("expected missing deployment credentials to fail")
+	}
+}
+
+func TestIsWebhookLimitError(t *testing.T) {
+	cases := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{"limit name", &provider.APIError{Status: 400, Name: "WEBHOOK_LIMIT_EXCEEDED"}, true},
+		{"limit message", &provider.APIError{Status: 400, Name: "VALIDATION_ERROR", Message: "The maximum number of webhooks has been reached"}, true},
+		{"other error", &provider.APIError{Status: 401, Name: "invalid_client"}, false},
+		{"plain error", errors.New("boom"), false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := isWebhookLimitError(tc.err); got != tc.want {
+				t.Fatalf("isWebhookLimitError(%v) = %v, want %v", tc.err, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestManagedExternalAccountIDIsMerchantScoped(t *testing.T) {
+	first := managedExternalAccountID("11111111-1111-1111-1111-111111111111")
+	second := managedExternalAccountID("22222222-2222-2222-2222-222222222222")
+	if first == second {
+		t.Fatal("managed external account IDs must be unique per merchant")
+	}
+	if !strings.HasPrefix(first, "PLATFORM:") {
+		t.Fatalf("managed external account ID = %q", first)
 	}
 }

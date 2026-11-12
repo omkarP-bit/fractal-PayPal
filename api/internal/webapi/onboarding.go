@@ -41,6 +41,7 @@ type providerAccountSummary struct {
 	Provider            string     `json:"provider"`
 	Environment         string     `json:"environment"`
 	ClientID            string     `json:"client_id,omitempty"`
+	Managed             bool       `json:"managed"`
 	WebhookID           string     `json:"webhook_id,omitempty"`
 	WebhookURL          string     `json:"webhook_url,omitempty"`
 	WebhookStatus       string     `json:"webhook_status"`
@@ -349,7 +350,9 @@ func (h *Handlers) ConnectPayPal(w http.ResponseWriter, r *http.Request) {
 		writeProblem(w, http.StatusBadRequest, "Public webhook URL required", err.Error())
 		return
 	}
-	account, err := h.registerWebhook(r.Context(), accountID, environment, clientID, clientSecret, webhookURL)
+	account, err := h.registerWebhook(r.Context(), accountID,
+		provider.NewPayPal(provider.BaseURLForEnvironment(environment), clientID, clientSecret, h.Log),
+		webhookURL)
 	if err != nil {
 		h.Log.Warn("paypal webhook registration failed", "account", accountID, "url", webhookURL, "err", err)
 		var apiErr *provider.APIError
@@ -373,15 +376,83 @@ func (h *Handlers) ConnectPayPal(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// ConnectManagedPayPal connects a merchant with FRACTAL's own PayPal sandbox
+// app. The merchant never leaves FRACTAL, creates a REST app, copies
+// credentials, or configures a tunnel. FRACTAL still registers a dedicated
+// webhook URL per merchant so delivery, signature verification and event
+// attribution remain merchant-scoped.
+func (h *Handlers) ConnectManagedPayPal(w http.ResponseWriter, r *http.Request) {
+	_, merchantID, ok := h.requireMerchantAdmin(w, r)
+	if !ok {
+		return
+	}
+
+	var country, currency string
+	if err := h.DB.QueryRow(r.Context(), `
+		SELECT trim(country), trim(currency) FROM merchants WHERE id = $1`,
+		merchantID).Scan(&country, &currency); err != nil {
+		writeProblem(w, http.StatusNotFound, "Merchant not found", "This merchant account no longer exists.")
+		return
+	}
+	if country == "" || currency == "" {
+		writeProblem(w, http.StatusBadRequest, "Region missing", "Choose your region before connecting PayPal.")
+		return
+	}
+
+	base, err := h.publicBaseURL(r)
+	if err != nil {
+		writeProblem(w, http.StatusBadRequest, "Public webhook URL required", err.Error())
+		return
+	}
+
+	client, err := h.platformPayPal()
+	if err != nil {
+		h.Log.Warn("platform paypal app unavailable", "err", err)
+		writeProblem(w, http.StatusServiceUnavailable, "FRACTAL PayPal app not configured",
+			"This deployment has no PayPal sandbox app configured. Set PAYPAL_CLIENT_ID and PAYPAL_CLIENT_SECRET, or connect your own app.")
+		return
+	}
+
+	accountID, err := h.upsertManagedAccount(r.Context(), merchantID)
+	if err != nil {
+		h.Log.Error("prepare managed paypal account", "err", err)
+		writeProblem(w, http.StatusInternalServerError, "Could not connect PayPal",
+			"The merchant PayPal account could not be prepared.")
+		return
+	}
+
+	webhookURL := base + "/webhooks/paypal/" + accountID
+	account, err := h.registerWebhook(r.Context(), accountID, client, webhookURL)
+	if err != nil {
+		h.Log.Warn("managed paypal webhook registration failed", "account", accountID, "url", webhookURL, "err", err)
+		if isWebhookLimitError(err) {
+			writeProblem(w, http.StatusConflict, "Sandbox webhook limit reached",
+				"PayPal allows 10 webhooks per sandbox app and this app is full. Remove an unused webhook in the PayPal Developer Dashboard, then retry. You can also connect your own PayPal app.")
+			return
+		}
+		var apiErr *provider.APIError
+		switch {
+		case errors.As(err, &apiErr) && apiErr.Status == http.StatusUnauthorized:
+			writeProblem(w, http.StatusBadGateway, "PayPal rejected FRACTAL's app credentials",
+				"The deployment's PayPal sandbox credentials were rejected. Check PAYPAL_CLIENT_ID and PAYPAL_CLIENT_SECRET.")
+		default:
+			writeProblem(w, http.StatusBadGateway, "PayPal registration failed",
+				"PayPal did not accept the managed webhook registration. "+safeError(err))
+		}
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"provider_account": account,
+		"merchant":         h.merchantSummary(r.Context(), merchantID),
+	})
+}
+
 // ReRegisterWebhook re-runs webhook registration for an existing account. It is
 // the recovery path when a webhook is deleted in PayPal or the public URL changes.
 func (h *Handlers) ReRegisterWebhook(w http.ResponseWriter, r *http.Request) {
 	_, merchantID, ok := h.requireMerchantAdmin(w, r)
 	if !ok {
-		return
-	}
-	if h.Secrets == nil {
-		writeProblem(w, http.StatusServiceUnavailable, "Onboarding unavailable", "Credential encryption is not configured.")
 		return
 	}
 
@@ -391,14 +462,16 @@ func (h *Handlers) ReRegisterWebhook(w http.ResponseWriter, r *http.Request) {
 		clientID    string
 		sealed      string
 		webhookURL  string
+		credRef     string
 	)
 	err := h.DB.QueryRow(r.Context(), `
 		SELECT id::text, environment, COALESCE(client_id, ''), COALESCE(encrypted_secret, ''),
-		       COALESCE(webhook_url, '')
+		       COALESCE(webhook_url, ''), credentials_ref
 		FROM provider_accounts
 		WHERE merchant_id = $1 AND provider = 'PAYPAL'
-		ORDER BY created_at ASC LIMIT 1`, merchantID).
-		Scan(&accountID, &environment, &clientID, &sealed, &webhookURL)
+		ORDER BY CASE WHEN credentials_ref = 'platform' THEN 0 ELSE 1 END, created_at ASC
+		LIMIT 1`, merchantID).
+		Scan(&accountID, &environment, &clientID, &sealed, &webhookURL, &credRef)
 	if errors.Is(err, pgx.ErrNoRows) {
 		writeProblem(w, http.StatusNotFound, "PayPal not connected", "Connect PayPal before registering a webhook.")
 		return
@@ -407,15 +480,33 @@ func (h *Handlers) ReRegisterWebhook(w http.ResponseWriter, r *http.Request) {
 		writeProblem(w, http.StatusInternalServerError, "Could not load PayPal account", "The provider account could not be read.")
 		return
 	}
-	if sealed == "" {
-		writeProblem(w, http.StatusBadRequest, "Legacy credentials", "This account uses deployment credentials and cannot be re-registered here.")
-		return
+
+	var client *provider.PayPal
+	if credRef == "platform" {
+		client, err = h.platformPayPal()
+		if err != nil {
+			h.Log.Warn("platform paypal app unavailable", "err", err)
+			writeProblem(w, http.StatusServiceUnavailable, "FRACTAL PayPal app not configured",
+				"This deployment has no PayPal sandbox app configured. Set PAYPAL_CLIENT_ID and PAYPAL_CLIENT_SECRET.")
+			return
+		}
+	} else {
+		if h.Secrets == nil {
+			writeProblem(w, http.StatusServiceUnavailable, "Onboarding unavailable", "Credential encryption is not configured.")
+			return
+		}
+		if sealed == "" {
+			writeProblem(w, http.StatusBadRequest, "Legacy credentials", "This account uses deployment credentials and cannot be re-registered here.")
+			return
+		}
+		secret, derr := h.Secrets.Decrypt(sealed)
+		if derr != nil {
+			writeProblem(w, http.StatusInternalServerError, "Could not read credentials", "Stored credentials could not be decrypted.")
+			return
+		}
+		client = provider.NewPayPal(provider.BaseURLForEnvironment(environment), clientID, secret, h.Log)
 	}
-	secret, err := h.Secrets.Decrypt(sealed)
-	if err != nil {
-		writeProblem(w, http.StatusInternalServerError, "Could not read credentials", "Stored credentials could not be decrypted.")
-		return
-	}
+
 	stored := strings.TrimRight(strings.TrimSpace(webhookURL), "/")
 	derived, derr := h.webhookURL(r, accountID)
 	switch {
@@ -431,9 +522,14 @@ func (h *Handlers) ReRegisterWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	account, err := h.registerWebhook(r.Context(), accountID, environment, clientID, secret, webhookURL)
+	account, err := h.registerWebhook(r.Context(), accountID, client, webhookURL)
 	if err != nil {
 		h.Log.Warn("paypal webhook re-registration failed", "account", accountID, "err", err)
+		if isWebhookLimitError(err) {
+			writeProblem(w, http.StatusConflict, "Sandbox webhook limit reached",
+				"PayPal allows 10 webhooks per sandbox app and this app is full. Remove an unused webhook in the PayPal Developer Dashboard, then retry.")
+			return
+		}
 		writeProblem(w, http.StatusBadGateway, "Webhook registration failed", safeError(err))
 		return
 	}
@@ -491,23 +587,26 @@ func (h *Handlers) providerAccount(ctx context.Context, merchantID string) (*pro
 		webhookID sql.NullString
 		regAt     sql.NullTime
 		checkedAt sql.NullTime
+		credRef   string
 	)
 	err := h.DB.QueryRow(ctx, `
 		SELECT id::text, provider, environment, COALESCE(client_id, ''), webhook_id,
 		       COALESCE(webhook_url, ''), webhook_status, status, webhook_registered_at,
-		       last_checked_at, COALESCE(webhook_error, '')
+		       last_checked_at, COALESCE(webhook_error, ''), credentials_ref
 		FROM provider_accounts
 		WHERE merchant_id = $1 AND provider = 'PAYPAL'
-		ORDER BY created_at ASC LIMIT 1`, merchantID).
+		ORDER BY CASE WHEN credentials_ref = 'platform' THEN 0 ELSE 1 END, created_at ASC
+		LIMIT 1`, merchantID).
 		Scan(&account.ID, &account.Provider, &account.Environment, &account.ClientID,
 			&webhookID, &account.WebhookURL, &account.WebhookStatus, &account.Status,
-			&regAt, &checkedAt, &account.WebhookError)
+			&regAt, &checkedAt, &account.WebhookError, &credRef)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, err
 	}
+	account.Managed = credRef == "platform"
 	if webhookID.Valid {
 		account.WebhookID = webhookID.String
 	}
@@ -529,11 +628,21 @@ func (h *Handlers) merchantSummary(ctx context.Context, merchantID string) merch
 	return summary
 }
 
-func (h *Handlers) registerWebhook(ctx context.Context, accountID, environment, clientID, clientSecret, webhookURL string) (*providerAccountSummary, error) {
+func (h *Handlers) registerWebhook(ctx context.Context, accountID string, client *provider.PayPal, webhookURL string) (*providerAccountSummary, error) {
 	registerCtx, cancel := context.WithTimeout(ctx, 25*time.Second)
 	defer cancel()
 
-	client := provider.NewPayPal(provider.BaseURLForEnvironment(environment), clientID, clientSecret, h.Log)
+	// Re-registering after a public URL change should not leave the previous
+	// webhook active. Delete it first when the URL differs; a missing webhook is
+	// treated as success, and a failure here must not block the new one.
+	var oldID, oldURL string
+	_ = h.DB.QueryRow(registerCtx, `
+		SELECT COALESCE(webhook_id, ''), COALESCE(webhook_url, '')
+		FROM provider_accounts WHERE id = $1`, accountID).Scan(&oldID, &oldURL)
+	if oldID != "" && strings.TrimRight(strings.TrimSpace(oldURL), "/") != strings.TrimRight(strings.TrimSpace(webhookURL), "/") {
+		_ = client.DeleteWebhook(registerCtx, oldID)
+	}
+
 	webhook, err := client.EnsureWebhook(registerCtx, webhookURL)
 	if err != nil {
 		safe := truncate(safeError(err), 500)
@@ -550,6 +659,7 @@ func (h *Handlers) registerWebhook(ctx context.Context, accountID, environment, 
 		regAt     sql.NullTime
 		checkedAt sql.NullTime
 		webhookID sql.NullString
+		credRef   string
 	)
 	err = h.DB.QueryRow(ctx, `
 		UPDATE provider_accounts
@@ -559,14 +669,15 @@ func (h *Handlers) registerWebhook(ctx context.Context, accountID, environment, 
 		WHERE id = $1
 		RETURNING id::text, provider, environment, COALESCE(client_id, ''), webhook_id,
 		          COALESCE(webhook_url, ''), webhook_status, status, webhook_registered_at,
-		          last_checked_at, COALESCE(webhook_error, '')`,
+		          last_checked_at, COALESCE(webhook_error, ''), credentials_ref`,
 		accountID, webhook.ID, webhookURL).
 		Scan(&account.ID, &account.Provider, &account.Environment, &account.ClientID,
 			&webhookID, &account.WebhookURL, &account.WebhookStatus, &account.Status,
-			&regAt, &checkedAt, &account.WebhookError)
+			&regAt, &checkedAt, &account.WebhookError, &credRef)
 	if err != nil {
 		return nil, fmt.Errorf("store webhook registration: %w", err)
 	}
+	account.Managed = credRef == "platform"
 	if webhookID.Valid {
 		account.WebhookID = webhookID.String
 	}
@@ -582,6 +693,101 @@ func (h *Handlers) registerWebhook(ctx context.Context, accountID, environment, 
 			SELECT merchant_id FROM provider_accounts WHERE id = $1
 		)`, accountID)
 	return &account, nil
+}
+
+// platformPayPal returns the deployment-level sandbox client used for managed
+// onboarding. Reusing the client built in main shares its cached OAuth token.
+func (h *Handlers) platformPayPal() (*provider.PayPal, error) {
+	if h.PayPal != nil && h.PayPal.ClientID != "" && h.PayPal.ClientSecret != "" {
+		return h.PayPal, nil
+	}
+	clientID := strings.TrimSpace(os.Getenv("PAYPAL_CLIENT_ID"))
+	clientSecret := strings.TrimSpace(os.Getenv("PAYPAL_CLIENT_SECRET"))
+	if clientID == "" || clientSecret == "" {
+		return nil, errors.New("PAYPAL_CLIENT_ID and PAYPAL_CLIENT_SECRET are not set")
+	}
+	base := strings.TrimSpace(os.Getenv("PAYPAL_BASE_URL"))
+	if base == "" {
+		base = provider.PayPalSandboxBaseURL
+	}
+	return provider.NewPayPal(base, clientID, clientSecret, h.Log), nil
+}
+
+func managedExternalAccountID(merchantID string) string {
+	return "PLATFORM:" + merchantID
+}
+
+// upsertManagedAccount creates or converts the merchant's provider account to
+// the platform-managed app. Secrets stay empty so the webhook receiver falls
+// back to the deployment credentials, and external_account_id is per merchant
+// so the PayPal-app uniqueness constraint is not shared across merchants.
+func (h *Handlers) upsertManagedAccount(ctx context.Context, merchantID string) (string, error) {
+	externalID := managedExternalAccountID(merchantID)
+
+	var (
+		accountID   string
+		credRef     string
+		environment string
+		clientID    string
+		sealed      string
+		webhookID   string
+	)
+	err := h.DB.QueryRow(ctx, `
+		SELECT id::text, credentials_ref, environment, COALESCE(client_id, ''),
+		       COALESCE(encrypted_secret, ''), COALESCE(webhook_id, '')
+		FROM provider_accounts
+		WHERE merchant_id = $1 AND provider = 'PAYPAL'
+		ORDER BY CASE WHEN credentials_ref = 'platform' THEN 0 ELSE 1 END, created_at ASC
+		LIMIT 1`, merchantID).
+		Scan(&accountID, &credRef, &environment, &clientID, &sealed, &webhookID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		err = h.DB.QueryRow(ctx, `
+			INSERT INTO provider_accounts
+			  (merchant_id, provider, environment, external_account_id, credentials_ref,
+			   client_id, encrypted_secret, status, webhook_status)
+			VALUES ($1, 'PAYPAL', 'SANDBOX', $2, 'platform', NULL, NULL, 'INACTIVE', 'REGISTERING')
+			RETURNING id::text`, merchantID, externalID).Scan(&accountID)
+		return accountID, err
+	}
+	if err != nil {
+		return "", err
+	}
+
+	// If the merchant previously connected their own app, remove that webhook
+	// best-effort so two registrations cannot deliver the same event.
+	if credRef != "platform" && sealed != "" && h.Secrets != nil {
+		if secret, derr := h.Secrets.Decrypt(sealed); derr == nil {
+			old := provider.NewPayPal(provider.BaseURLForEnvironment(environment), clientID, secret, h.Log)
+			delCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+			if delErr := old.DeleteWebhook(delCtx, webhookID); delErr != nil {
+				h.Log.Warn("could not delete previous paypal webhook", "account", accountID, "err", delErr)
+			}
+			cancel()
+		}
+	}
+
+	_, err = h.DB.Exec(ctx, `
+		UPDATE provider_accounts
+		SET environment = 'SANDBOX', external_account_id = $2, credentials_ref = 'platform',
+		    client_id = NULL, encrypted_secret = NULL, status = 'INACTIVE',
+		    webhook_status = 'REGISTERING', webhook_error = NULL, updated_at = now()
+		WHERE id = $1`, accountID, externalID)
+	if err != nil {
+		return "", err
+	}
+	return accountID, nil
+}
+
+// isWebhookLimitError recognises PayPal's "maximum number of webhooks" failure.
+// The sandbox app allows 10 registrations, which is enough for the current
+// testing cohort but must surface as an actionable message when exhausted.
+func isWebhookLimitError(err error) bool {
+	var apiErr *provider.APIError
+	if !errors.As(err, &apiErr) {
+		return false
+	}
+	text := strings.ToLower(apiErr.Name + " " + apiErr.Message)
+	return strings.Contains(text, "limit") || strings.Contains(text, "maximum number of webhooks")
 }
 
 func (h *Handlers) requireMerchantAdmin(w http.ResponseWriter, r *http.Request) (*auth.Claims, string, bool) {
