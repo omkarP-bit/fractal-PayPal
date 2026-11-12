@@ -134,7 +134,7 @@ export function MerchantIncidents() {
   const totals = useMemo(
     () => ({
       incidents: incidents.length,
-      cases: incidents.reduce((sum, incident) => sum + incident.open_case_count, 0),
+      cases: incidents.reduce((sum, incident) => sum + incident.case_count, 0),
       exposure: incidents.reduce((sum, incident) => sum + incident.affected_amount_minor, 0),
       drafts: incidents.reduce((sum, incident) => sum + incident.drafts_pending, 0),
     }),

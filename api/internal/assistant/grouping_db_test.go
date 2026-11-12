@@ -178,6 +178,24 @@ func TestGroupingThresholdRequiresMinCases(t *testing.T) {
 		t.Fatalf("inbox shows %d incidents below the threshold, want 0", len(inbox))
 	}
 
+	// A below-threshold group is not shown, so its case must still list on its
+	// own or the work would disappear from the inbox. The second case has not
+	// been grouped yet, so both cases are standalone here.
+	standalone, err := svc.ListTriageCases(ctx, f.merchantID)
+	if err != nil {
+		t.Fatalf("list triage cases: %v", err)
+	}
+	if len(standalone) != 2 {
+		t.Fatalf("standalone cases below the threshold = %d, want both ungrouped cases", len(standalone))
+	}
+	seen := map[string]bool{}
+	for _, c := range standalone {
+		seen[c.CaseID] = true
+	}
+	if !seen[f.cases[0]] || !seen[f.cases[1]] {
+		t.Fatal("a below-threshold grouped case disappeared from the standalone inbox")
+	}
+
 	incident, err = svc.GroupCase(ctx, f.cases[1])
 	if err != nil {
 		t.Fatalf("group second case: %v", err)
@@ -195,6 +213,16 @@ func TestGroupingThresholdRequiresMinCases(t *testing.T) {
 	}
 	if len(inbox) != 1 {
 		t.Fatalf("inbox shows %d incidents, want 1 once the threshold is met", len(inbox))
+	}
+
+	// Once the cases are shown inside the incident card they must not be
+	// repeated as standalone inbox rows.
+	standalone, err = svc.ListTriageCases(ctx, f.merchantID)
+	if err != nil {
+		t.Fatalf("list triage cases after threshold: %v", err)
+	}
+	if len(standalone) != 0 {
+		t.Fatalf("triage inbox repeats %d grouped cases, want 0", len(standalone))
 	}
 }
 

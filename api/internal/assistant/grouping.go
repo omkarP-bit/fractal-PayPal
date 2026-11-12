@@ -708,7 +708,16 @@ func (s *Service) ListTriageCases(ctx context.Context, merchantID string) ([]Inc
 			ORDER BY ce.fetched_at DESC LIMIT 1
 		) ev ON true
 		WHERE c.merchant_id = $1 AND c.status NOT IN ('RESOLVED','REJECTED','CLOSED')
-		ORDER BY c.created_at DESC`, merchantID)
+		  -- A case shown inside an incident card must not also appear as a
+		  -- standalone row; below-threshold groups stay out of the inbox, so
+		  -- their cases still list individually here.
+		  AND NOT EXISTS (
+			SELECT 1 FROM incident_cases ic
+			JOIN incidents i ON i.id = ic.incident_id
+			WHERE ic.case_id = c.id AND i.merchant_id = c.merchant_id
+			  AND i.case_count >= $2 AND i.status <> 'CLOSED'
+		  )
+		ORDER BY c.created_at DESC`, merchantID, s.cfg.MinCases)
 	if err != nil {
 		return nil, err
 	}
