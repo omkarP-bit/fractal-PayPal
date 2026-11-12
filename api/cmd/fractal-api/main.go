@@ -21,6 +21,7 @@ import (
 	"fractal/api/internal/policy"
 	"fractal/api/internal/provider"
 	"fractal/api/internal/reconciler"
+	"fractal/api/internal/secrets"
 	"fractal/api/internal/telemetry"
 	"fractal/api/internal/telemetry/endpoints"
 	"fractal/api/internal/webapi"
@@ -28,10 +29,11 @@ import (
 )
 
 type webhookProcessor struct {
-	db     *pgxpool.Pool
-	paypal *provider.PayPal
-	log    *slog.Logger
-	web    *webapi.Handlers
+	db       *pgxpool.Pool
+	paypal   *provider.PayPal
+	accounts *webhook.PGAccounts
+	log      *slog.Logger
+	web      *webapi.Handlers
 }
 
 func (p *webhookProcessor) Process(ctx context.Context, ev webhook.EventRow) error {
@@ -56,8 +58,16 @@ func (p *webhookProcessor) Process(ctx context.Context, ev webhook.EventRow) err
 		providerOrderID = payload.Resource.ID
 	}
 
-	// Fetch fresh provider state from PayPal.
-	tx, err := p.paypal.GetTransaction(ctx, providerOrderID)
+	// Fetch fresh provider state from PayPal using this merchant's credentials.
+	client := p.paypal
+	if p.accounts != nil {
+		account, err := p.accounts.Credentials(ctx, ev.ProviderAccountID)
+		if err != nil {
+			return fmt.Errorf("resolve provider credentials: %w", err)
+		}
+		client = provider.NewPayPal(account.BaseURL, account.ClientID, account.ClientSecret, p.log)
+	}
+	tx, err := client.GetTransaction(ctx, providerOrderID)
 	if err != nil {
 		return fmt.Errorf("fetch paypal transaction: %w", err)
 	}
@@ -182,23 +192,36 @@ func main() {
 
 	paypal := provider.NewPayPal(baseURL, clientID, clientSecret, logger)
 
+	cipher, err := secrets.NewFromEnv()
+	if err != nil {
+		logger.Error("credential encryption unavailable", "err", err)
+		os.Exit(1)
+	}
+
 	opaClient := policy.NewClient(os.Getenv("OPA_URL"))
 	web := webapi.New(pool, logger, opaClient, paypal, anomalyEnabled)
+	web.Secrets = cipher
+	web.PublicBaseURL = os.Getenv("FRACTAL_PUBLIC_URL")
+	web.KibanaURL = os.Getenv("KIBANA_URL")
 
 	wake, wakeCh := webhook.NewWaker()
+	accounts := &webhook.PGAccounts{DB: sqlDB, Decrypt: cipher.Decrypt}
 	h := &webhook.Handler{
 		Provider: "PAYPAL",
-		Accounts: &webhook.PGAccounts{DB: sqlDB},
+		Accounts: accounts,
 		Verifier: paypal,
-		Store:    &webhook.PGStore{DB: sqlDB},
-		Wake:     wake,
-		Log:      logger,
+		VerifierFor: func(account webhook.AccountCredentials) provider.WebhookVerifier {
+			return provider.NewPayPal(account.BaseURL, account.ClientID, account.ClientSecret, logger)
+		},
+		Store: &webhook.PGStore{DB: sqlDB},
+		Wake:  wake,
+		Log:   logger,
 	}
 
 	// Real webhook processor: updates payment_transactions from verified events.
 	go (&webhook.Worker{
 		DB:   sqlDB,
-		Proc: &webhookProcessor{db: pool, paypal: paypal, log: logger, web: web},
+		Proc: &webhookProcessor{db: pool, paypal: paypal, accounts: accounts, log: logger, web: web},
 		Wake: wakeCh,
 		Log:  logger,
 	}).Run(context.Background())
@@ -259,6 +282,16 @@ func main() {
 	mux.Handle("POST /cases", middleware(auth.RequireAuth(http.HandlerFunc(caseHandlers.Create))))
 
 	mux.Handle("POST /api/v1/auth/dev-login", middleware(http.HandlerFunc(web.DevLogin)))
+	mux.Handle("POST /api/v1/auth/login", middleware(http.HandlerFunc(web.PasswordLogin)))
+
+	// Merchant onboarding: signup, region choice and Connect PayPal.
+	mux.Handle("GET /api/v1/onboarding/regions", middleware(http.HandlerFunc(web.Regions)))
+	mux.Handle("POST /api/v1/onboarding/signup", middleware(http.HandlerFunc(web.Signup)))
+	mux.Handle("GET /api/v1/onboarding/status", middleware(auth.RequireAuth(http.HandlerFunc(web.OnboardingStatus))))
+	mux.Handle("POST /api/v1/onboarding/paypal", middleware(auth.RequireAuth(http.HandlerFunc(web.ConnectPayPal))))
+	mux.Handle("POST /api/v1/onboarding/paypal/re-register", middleware(auth.RequireAuth(http.HandlerFunc(web.ReRegisterWebhook))))
+	mux.Handle("GET /api/v1/observability/summary", middleware(auth.RequireAuth(http.HandlerFunc(web.ObservabilitySummary))))
+
 	mux.Handle("GET /api/v1/cases", middleware(auth.RequireAuth(http.HandlerFunc(web.ListCases))))
 	mux.Handle("POST /api/v1/cases", middleware(auth.RequireAuth(http.HandlerFunc(web.CreateCase))))
 	mux.Handle("GET /api/v1/cases/{id}", middleware(auth.RequireAuth(http.HandlerFunc(web.GetCase))))
@@ -269,6 +302,9 @@ func main() {
 	mux.Handle("POST /api/v1/cases/{id}/approvals/{approvalID}", middleware(auth.RequireAuth(http.HandlerFunc(web.DecideApproval))))
 
 	mux.Handle("POST /api/v1/webhooks/paypal/{provider_account_id}", middleware(h))
+	// Per-merchant onboarding registers the shorter public URL. Both paths use
+	// the same receiver so existing tunnelled webhooks keep working.
+	mux.Handle("POST /webhooks/paypal/{provider_account_id}", middleware(h))
 
 	mux.Handle("POST /internal/v1/claim-tokens", middleware(http.HandlerFunc(web.RegisterClaimToken)))
 

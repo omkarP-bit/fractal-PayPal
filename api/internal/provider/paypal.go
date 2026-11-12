@@ -342,6 +342,158 @@ func amountStringFromMinor(amountMinor int64) string {
 	return fmt.Sprintf("%d.%02d", whole, frac)
 }
 
-func (p *PayPal) ListWebhookEvents(ctx context.Context) ([]WebhookEvent, error) {
-	return nil, nil
+// WebhookEventTypes is the subscription set used for merchant webhooks.
+// "*" lets PayPal deliver every event type; FRACTAL only stores/processes the
+// ones it understands, and the signature is verified before anything is kept.
+var WebhookEventTypes = []string{"*"}
+
+// Webhook is the subset of PayPal's webhook resource FRACTAL stores.
+type Webhook struct {
+	ID         string             `json:"id"`
+	URL        string             `json:"url"`
+	EventTypes []WebhookEventType `json:"event_types"`
+}
+
+type WebhookEventType struct {
+	Name string `json:"name"`
+}
+
+// APIError describes a non-2xx PayPal response without exposing credentials.
+type APIError struct {
+	Status  int
+	Name    string
+	Message string
+}
+
+func (e *APIError) Error() string {
+	if e.Name != "" || e.Message != "" {
+		return fmt.Sprintf("paypal api: status %d: %s: %s", e.Status, e.Name, e.Message)
+	}
+	return fmt.Sprintf("paypal api: status %d", e.Status)
+}
+
+func (p *PayPal) webhookRequest(ctx context.Context, method, path string, body any) (*http.Response, error) {
+	var reader io.Reader
+	if body != nil {
+		encoded, err := json.Marshal(body)
+		if err != nil {
+			return nil, err
+		}
+		reader = bytes.NewReader(encoded)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, p.BaseURL+path, reader)
+	if err != nil {
+		return nil, err
+	}
+	tok, err := p.accessToken(ctx)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+tok)
+	req.Header.Set("Content-Type", "application/json")
+	return p.HTTP.Do(req)
+}
+
+func decodePayPalError(resp *http.Response) error {
+	defer resp.Body.Close()
+	var out struct {
+		Name    string `json:"name"`
+		Message string `json:"message"`
+	}
+	_ = json.NewDecoder(io.LimitReader(resp.Body, 16<<10)).Decode(&out)
+	return &APIError{Status: resp.StatusCode, Name: out.Name, Message: out.Message}
+}
+
+// ListWebhooks returns the webhooks registered for the credentials' PayPal app.
+func (p *PayPal) ListWebhooks(ctx context.Context) ([]Webhook, error) {
+	resp, err := p.webhookRequest(ctx, http.MethodGet, "/v1/notifications/webhooks", nil)
+	if err != nil {
+		return nil, fmt.Errorf("paypal list webhooks: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, decodePayPalError(resp)
+	}
+	defer resp.Body.Close()
+	var out struct {
+		Webhooks []Webhook `json:"webhooks"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&out); err != nil {
+		return nil, fmt.Errorf("paypal list webhooks response: %w", err)
+	}
+	return out.Webhooks, nil
+}
+
+// CreateWebhook registers a webhook URL and returns PayPal's webhook ID.
+func (p *PayPal) CreateWebhook(ctx context.Context, webhookURL string, eventTypes []string) (*Webhook, error) {
+	if strings.TrimSpace(webhookURL) == "" {
+		return nil, errors.New("webhook url is empty")
+	}
+	if len(eventTypes) == 0 {
+		eventTypes = WebhookEventTypes
+	}
+	types := make([]WebhookEventType, 0, len(eventTypes))
+	for _, name := range eventTypes {
+		types = append(types, WebhookEventType{Name: name})
+	}
+	body := map[string]any{"url": webhookURL, "event_types": types}
+
+	resp, err := p.webhookRequest(ctx, http.MethodPost, "/v1/notifications/webhooks", body)
+	if err != nil {
+		return nil, fmt.Errorf("paypal create webhook: %w", err)
+	}
+	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
+		return nil, decodePayPalError(resp)
+	}
+	defer resp.Body.Close()
+	var out Webhook
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&out); err != nil {
+		return nil, fmt.Errorf("paypal create webhook response: %w", err)
+	}
+	if out.ID == "" {
+		return nil, errors.New("paypal create webhook response missing id")
+	}
+	return &out, nil
+}
+
+// DeleteWebhook removes a webhook. A missing webhook is not an error.
+func (p *PayPal) DeleteWebhook(ctx context.Context, webhookID string) error {
+	if strings.TrimSpace(webhookID) == "" {
+		return nil
+	}
+	resp, err := p.webhookRequest(ctx, http.MethodDelete,
+		"/v1/notifications/webhooks/"+url.PathEscape(webhookID), nil)
+	if err != nil {
+		return fmt.Errorf("paypal delete webhook: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNoContent || resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusNotFound {
+		return nil
+	}
+	return decodePayPalError(resp)
+}
+
+// EnsureWebhook reuses a webhook already registered for the same URL, otherwise
+// creates one. Re-running Connect PayPal therefore stays idempotent.
+func (p *PayPal) EnsureWebhook(ctx context.Context, webhookURL string) (*Webhook, error) {
+	existing, err := p.ListWebhooks(ctx)
+	if err == nil {
+		for i := range existing {
+			if sameWebhookURL(existing[i].URL, webhookURL) {
+				return &existing[i], nil
+			}
+		}
+	}
+	return p.CreateWebhook(ctx, webhookURL, WebhookEventTypes)
+}
+
+func sameWebhookURL(a, b string) bool {
+	return strings.TrimRight(strings.TrimSpace(a), "/") == strings.TrimRight(strings.TrimSpace(b), "/")
+}
+
+// BaseURLForEnvironment returns the PayPal REST endpoint for a credential set.
+func BaseURLForEnvironment(environment string) string {
+	if strings.EqualFold(environment, "LIVE") {
+		return PayPalLiveBaseURL
+	}
+	return PayPalSandboxBaseURL
 }

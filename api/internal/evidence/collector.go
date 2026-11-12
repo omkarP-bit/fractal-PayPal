@@ -30,9 +30,12 @@ type Transaction struct {
 }
 
 type Collector struct {
-	db     *pgxpool.Pool
-	paypal ProviderFetcher
+	db       *pgxpool.Pool
+	paypal   ProviderFetcher
 	merchant MerchantAPI
+	// ProviderFor optionally resolves the merchant's own provider client. It
+	// keeps credential selection out of the collector and out of the AI layer.
+	ProviderFor func(ctx context.Context, caseID string) (ProviderFetcher, error)
 }
 
 type MerchantAPI interface {
@@ -56,8 +59,20 @@ func NewCollector(db *pgxpool.Pool, paypal ProviderFetcher, merchant MerchantAPI
 func (c *Collector) Collect(ctx context.Context, caseID string, providerOrderID string, merchantOrderRef string) ([]string, error) {
 	var ids []string
 
-	// 1. Provider transaction evidence (fresh fetch from PayPal).
-	tx, err := c.paypal.GetTransaction(ctx, providerOrderID)
+	// 1. Provider transaction evidence (fresh fetch from PayPal). The fetcher is
+	// resolved per case when the deployment supports merchant onboarding, so a
+	// merchant never fetches another merchant's order with shared credentials.
+	fetcher := c.paypal
+	if c.ProviderFor != nil {
+		resolved, err := c.ProviderFor(ctx, caseID)
+		if err != nil {
+			return nil, fmt.Errorf("resolve provider credentials: %w", err)
+		}
+		if resolved != nil {
+			fetcher = resolved
+		}
+	}
+	tx, err := fetcher.GetTransaction(ctx, providerOrderID)
 	if err != nil {
 		return nil, fmt.Errorf("fetch provider: %w", err)
 	}

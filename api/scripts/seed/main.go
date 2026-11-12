@@ -45,8 +45,8 @@ func main() {
 		('admin@fractal.dev', 'Platform Admin', 'PLATFORM_ADMIN')
 		ON CONFLICT (email) DO NOTHING`)
 
-	must(`INSERT INTO merchants (id, legal_name, country, integration_base_url, integration_key_ref)
-		VALUES ('00000000-0000-0000-0000-0000000000c1', 'Acme Store', 'US', 'http://merchant-store:8090', 'ref:acme:dev-key')
+	must(`INSERT INTO merchants (id, legal_name, country, currency, onboarding_status, integration_base_url, integration_key_ref)
+		VALUES ('00000000-0000-0000-0000-0000000000c1', 'Acme Store', 'US', 'USD', 'ACTIVE', 'http://merchant-store:8090', 'ref:acme:dev-key')
 		ON CONFLICT (id) DO NOTHING`)
 
 	must(`INSERT INTO provider_accounts (id, merchant_id, provider, environment, external_account_id, credentials_ref, webhook_id)

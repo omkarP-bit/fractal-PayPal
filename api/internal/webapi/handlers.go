@@ -19,6 +19,7 @@ import (
 	"fractal/api/internal/investigator"
 	"fractal/api/internal/policy"
 	"fractal/api/internal/provider"
+	"fractal/api/internal/secrets"
 )
 
 type Handlers struct {
@@ -33,6 +34,13 @@ type Handlers struct {
 	Investigator              *investigator.Client
 	AnomalyEnabled            bool
 	MerchantIntegrationSecret string
+
+	// Onboarding: Secrets seals provider credentials, PublicBaseURL is the
+	// externally reachable app origin (Render or a tunnel), and KibanaURL is the
+	// live observability dashboard.
+	Secrets       *secrets.Cipher
+	PublicBaseURL string
+	KibanaURL     string
 }
 
 func New(db *pgxpool.Pool, log *slog.Logger, policyClient *policy.Client, paypal *provider.PayPal, anomalyEnabled bool) *Handlers {
@@ -44,7 +52,7 @@ func New(db *pgxpool.Pool, log *slog.Logger, policyClient *policy.Client, paypal
 		base:   base,
 		client: &http.Client{Timeout: 12 * time.Second},
 	})
-	return &Handlers{
+	h := &Handlers{
 		DB:                        db,
 		MerchantStoreBase:         base,
 		HTTP:                      &http.Client{Timeout: 12 * time.Second},
@@ -56,6 +64,10 @@ func New(db *pgxpool.Pool, log *slog.Logger, policyClient *policy.Client, paypal
 		AnomalyEnabled:            anomalyEnabled,
 		MerchantIntegrationSecret: os.Getenv("MERCHANT_INTEGRATION_SECRET"),
 	}
+	// Resolve merchant credentials lazily: Secrets and PublicBaseURL are set by
+	// main after construction, and the AI layer only ever sees evidence.
+	collector.ProviderFor = h.providerFetcherForCase
+	return h
 }
 
 type merchantAPI struct {

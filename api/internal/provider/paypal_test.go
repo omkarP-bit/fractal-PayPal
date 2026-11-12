@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
@@ -167,5 +168,76 @@ func TestPayPalAccessTokenExpired(t *testing.T) {
 
 	if calls != 2 {
 		t.Errorf("expected 2 token requests after expiry, got %d", calls)
+	}
+}
+
+func TestPayPalEnsureWebhookCreates(t *testing.T) {
+	created := false
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/v1/oauth2/token":
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{"access_token":"tok","expires_in":3600}`))
+		case r.URL.Path == "/v1/notifications/webhooks" && r.Method == http.MethodGet:
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{"webhooks":[]}`))
+		case r.URL.Path == "/v1/notifications/webhooks" && r.Method == http.MethodPost:
+			created = true
+			body, _ := io.ReadAll(r.Body)
+			if !strings.Contains(string(body), "https://app.example.com/webhooks/paypal/acc-1") {
+				t.Errorf("registration body missing URL: %s", body)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusCreated)
+			w.Write([]byte(`{"id":"WH-NEW","url":"https://app.example.com/webhooks/paypal/acc-1"}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer srv.Close()
+
+	p := NewPayPal(srv.URL, "client-id", "client-secret", nil)
+	p.HTTP = srv.Client()
+
+	wh, err := p.EnsureWebhook(context.Background(), "https://app.example.com/webhooks/paypal/acc-1")
+	if err != nil {
+		t.Fatalf("EnsureWebhook: %v", err)
+	}
+	if !created || wh.ID != "WH-NEW" {
+		t.Fatalf("webhook = %+v, created=%v", wh, created)
+	}
+}
+
+func TestPayPalEnsureWebhookReusesExistingURL(t *testing.T) {
+	created := false
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/v1/oauth2/token":
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{"access_token":"tok","expires_in":3600}`))
+		case r.URL.Path == "/v1/notifications/webhooks" && r.Method == http.MethodGet:
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{"webhooks":[{"id":"WH-OLD","url":"https://app.example.com/webhooks/paypal/acc-1/"}]}`))
+		case r.URL.Path == "/v1/notifications/webhooks" && r.Method == http.MethodPost:
+			created = true
+			w.WriteHeader(http.StatusCreated)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer srv.Close()
+
+	p := NewPayPal(srv.URL, "client-id", "client-secret", nil)
+	p.HTTP = srv.Client()
+
+	wh, err := p.EnsureWebhook(context.Background(), "https://app.example.com/webhooks/paypal/acc-1")
+	if err != nil {
+		t.Fatalf("EnsureWebhook: %v", err)
+	}
+	if created {
+		t.Fatal("expected an existing webhook to be reused")
+	}
+	if wh.ID != "WH-OLD" {
+		t.Fatalf("webhook id = %q, want WH-OLD", wh.ID)
 	}
 }

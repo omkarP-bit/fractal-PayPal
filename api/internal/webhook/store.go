@@ -5,7 +5,10 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
+
+	"fractal/api/internal/provider"
 )
 
 // PGStore persists webhook data in PostgreSQL through database/sql.
@@ -47,26 +50,94 @@ func (s *PGStore) RecordSecurityEvent(ctx context.Context, se SecurityEvent) err
 	return err
 }
 
-// PGAccounts resolves the webhook ID registered for a provider account.
-type PGAccounts struct{ DB *sql.DB }
+// AccountCredentials is the per-merchant verification context. The secret is
+// decrypted in memory only and never leaves this struct or reaches a logger.
+type AccountCredentials struct {
+	WebhookID    string
+	ClientID     string
+	ClientSecret string
+	BaseURL      string
+	Environment  string
+}
+
+// PGAccounts resolves the webhook ID and, when onboarding has stored them, the
+// per-account PayPal credentials.
+type PGAccounts struct {
+	DB *sql.DB
+	// Decrypt opens provider_accounts.encrypted_secret. It is optional so the
+	// legacy single-account deployment keeps working from .env.
+	Decrypt func(string) (string, error)
+}
 
 func (a *PGAccounts) WebhookID(ctx context.Context, accountID string) (string, error) {
-	var id sql.NullString
-	err := a.DB.QueryRowContext(ctx, `
-		SELECT webhook_id FROM provider_accounts
-		WHERE id = $1 AND provider = 'PAYPAL' AND status = 'ACTIVE'`, accountID).Scan(&id)
-	if errors.Is(err, sql.ErrNoRows) {
-		return "", ErrAccountNotFound
-	}
+	account, err := a.Credentials(ctx, accountID)
 	if err != nil {
 		return "", err
 	}
-	// Prefer the DB-stored webhook ID; fall back to PAYPAL_WEBHOOK_ID from .env.
-	if id.Valid && id.String != "" {
-		return id.String, nil
+	return account.WebhookID, nil
+}
+
+// Credentials loads the account row and falls back to the legacy env
+// credentials for accounts that predate merchant onboarding.
+func (a *PGAccounts) Credentials(ctx context.Context, accountID string) (AccountCredentials, error) {
+	var (
+		webhookID   sql.NullString
+		clientID    sql.NullString
+		sealed      sql.NullString
+		environment string
+	)
+	err := a.DB.QueryRowContext(ctx, `
+		SELECT webhook_id, client_id, encrypted_secret, environment
+		FROM provider_accounts
+		WHERE id = $1 AND provider = 'PAYPAL' AND status = 'ACTIVE'`, accountID).
+		Scan(&webhookID, &clientID, &sealed, &environment)
+	if errors.Is(err, sql.ErrNoRows) {
+		return AccountCredentials{}, ErrAccountNotFound
 	}
+	if err != nil {
+		return AccountCredentials{}, err
+	}
+
+	account := AccountCredentials{
+		WebhookID:   webhookID.String,
+		ClientID:    clientID.String,
+		Environment: environment,
+		BaseURL:     provider.BaseURLForEnvironment(environment),
+	}
+	if account.WebhookID == "" {
+		account.WebhookID = envWebhookID()
+	}
+
+	if account.ClientID == "" || sealed.String == "" {
+		// Legacy account: the deployment-level app credentials still apply.
+		account.ClientID = os.Getenv("PAYPAL_CLIENT_ID")
+		account.ClientSecret = os.Getenv("PAYPAL_CLIENT_SECRET")
+		if base := os.Getenv("PAYPAL_BASE_URL"); base != "" {
+			account.BaseURL = base
+		}
+	} else {
+		if a.Decrypt == nil {
+			return AccountCredentials{}, errors.New("provider account has an encrypted secret but no decryption key")
+		}
+		secret, err := a.Decrypt(sealed.String)
+		if err != nil {
+			return AccountCredentials{}, fmt.Errorf("decrypt provider account secret: %w", err)
+		}
+		account.ClientSecret = secret
+	}
+
+	if account.WebhookID == "" {
+		return AccountCredentials{}, ErrAccountNotFound
+	}
+	if account.ClientID == "" || account.ClientSecret == "" {
+		return AccountCredentials{}, errors.New("provider account has no usable PayPal credentials")
+	}
+	return account, nil
+}
+
+func envWebhookID() string {
 	if envID := os.Getenv("PAYPAL_WEBHOOK_ID"); envID != "" && envID != "your_sandbox_webhook_id" {
-		return envID, nil
+		return envID
 	}
-	return "", ErrAccountNotFound
+	return ""
 }

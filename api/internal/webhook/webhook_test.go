@@ -286,3 +286,49 @@ func TestHandlerBodyTooLarge(t *testing.T) {
 		t.Errorf("expected 413, got %d", rr.Code)
 	}
 }
+
+type mockCredentialResolver struct {
+	creds AccountCredentials
+	err   error
+}
+
+func (m *mockCredentialResolver) WebhookID(ctx context.Context, providerAccountID string) (string, error) {
+	return m.creds.WebhookID, m.err
+}
+
+func (m *mockCredentialResolver) Credentials(ctx context.Context, providerAccountID string) (AccountCredentials, error) {
+	return m.creds, m.err
+}
+
+func TestHandlerUsesPerAccountCredentials(t *testing.T) {
+	store := &mockStore{inserted: true}
+	var got AccountCredentials
+	handler := &Handler{
+		Provider: "PAYPAL",
+		Accounts: &mockCredentialResolver{creds: AccountCredentials{
+			WebhookID:    "WH-ACCOUNT",
+			ClientID:     "client-account",
+			ClientSecret: "secret-account",
+			BaseURL:      "https://api-m.sandbox.paypal.com",
+			Environment:  "SANDBOX",
+		}},
+		VerifierFor: func(account AccountCredentials) provider.WebhookVerifier {
+			got = account
+			return &mockVerifier{ok: true}
+		},
+		Store: store,
+	}
+	h := routeThroughMux(handler)
+
+	body := `{"id":"evt_1","event_type":"PAYMENT.CAPTURE.COMPLETED","resource":{"id":"cap_1"}}`
+	req := reqWithHeaders(body, headers())
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rr.Code)
+	}
+	if got.WebhookID != "WH-ACCOUNT" || got.ClientID != "client-account" {
+		t.Fatalf("verifier received wrong account: %+v", got)
+	}
+}

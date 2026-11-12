@@ -59,6 +59,13 @@ type AccountResolver interface {
 	WebhookID(ctx context.Context, providerAccountID string) (string, error)
 }
 
+// CredentialResolver is implemented when the account row carries per-merchant
+// PayPal credentials. The handler then verifies with that merchant's app, not a
+// deployment-wide credential.
+type CredentialResolver interface {
+	Credentials(ctx context.Context, providerAccountID string) (AccountCredentials, error)
+}
+
 type Store interface {
 	// InsertVerified stores a verified event. inserted is false for a duplicate.
 	InsertVerified(ctx context.Context, providerAccountID string, ev Event, raw []byte, sha256hex string) (inserted bool, err error)
@@ -69,9 +76,13 @@ type Handler struct {
 	Provider string // "PAYPAL"
 	Accounts AccountResolver
 	Verifier provider.WebhookVerifier
-	Store    Store
-	Wake     func() // optional: nudges the worker after a new event is stored
-	Log      *slog.Logger
+	// VerifierFor builds a verifier from the account's own credentials. When
+	// set together with a CredentialResolver, the deployment-wide Verifier is
+	// ignored. This is the per-merchant path.
+	VerifierFor func(AccountCredentials) provider.WebhookVerifier
+	Store       Store
+	Wake        func() // optional: nudges the worker after a new event is stored
+	Log         *slog.Logger
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -112,24 +123,51 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 3. Which webhook ID should this delivery be verified against?
+	// 3. Resolve the account from the URL. When the row carries per-merchant
+	// credentials, verify with those; otherwise use the legacy deployment-wide
+	// verifier. The account must exist and be active either way.
 	if !uuidRe.MatchString(accountID) {
 		writeJSON(w, http.StatusNotFound, "unknown_account")
 		return
 	}
-	webhookID, err := h.Accounts.WebhookID(ctx, accountID)
-	if errors.Is(err, ErrAccountNotFound) {
-		writeJSON(w, http.StatusNotFound, "unknown_account")
-		return
+	var (
+		webhookID string
+		verifier  = h.Verifier
+	)
+	if resolver, ok := h.Accounts.(CredentialResolver); ok && h.VerifierFor != nil {
+		account, err := resolver.Credentials(ctx, accountID)
+		if errors.Is(err, ErrAccountNotFound) {
+			writeJSON(w, http.StatusNotFound, "unknown_account")
+			return
+		}
+		if err != nil {
+			log.Error("account credential lookup failed", "err", err)
+			writeJSON(w, http.StatusServiceUnavailable, "retry_later")
+			return
+		}
+		webhookID = account.WebhookID
+		verifier = h.VerifierFor(account)
+	} else {
+		var err error
+		webhookID, err = h.Accounts.WebhookID(ctx, accountID)
+		if errors.Is(err, ErrAccountNotFound) {
+			writeJSON(w, http.StatusNotFound, "unknown_account")
+			return
+		}
+		if err != nil {
+			log.Error("account lookup failed", "err", err)
+			writeJSON(w, http.StatusServiceUnavailable, "retry_later")
+			return
+		}
 	}
-	if err != nil {
-		log.Error("account lookup failed", "err", err)
+	if verifier == nil {
+		log.Error("no webhook verifier for account", "account", accountID)
 		writeJSON(w, http.StatusServiceUnavailable, "retry_later")
 		return
 	}
 
 	// 4. Verify with the provider. Undecided means retry later, never store.
-	ok, err := h.Verifier.VerifyWebhook(ctx, webhookID, hdr, raw)
+	ok, err := verifier.VerifyWebhook(ctx, webhookID, hdr, raw)
 	if err != nil {
 		log.Error("webhook verification undecided", "err", err)
 		writeJSON(w, http.StatusServiceUnavailable, "retry_later")
