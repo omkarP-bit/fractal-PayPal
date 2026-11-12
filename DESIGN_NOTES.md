@@ -195,6 +195,11 @@ icon source.
   PayPal and webhook live.
 - Region is a required select. Currency is derived from the region and is not silently
   defaulted to USD; cross-border-only regions show a warning strip with the limitation.
+- The Connect PayPal panel links to the PayPal Developer Dashboard and states that
+  FRACTAL consumes an app the merchant creates; it cannot generate Client IDs or
+  Secrets. Webhook registration requires a public HTTPS origin, so the panel explains
+  `FRACTAL_PUBLIC_URL` / `PUBLIC_TUNNEL_URL` instead of surfacing PayPal's opaque
+  "Invalid data provided" error.
 - The authenticated `/merchant/onboarding` screen reuses the detail-page pattern: a
   main column for business/region and webhook status, plus a "What happens next" rail.
 - Secrets use `type="password"`, are cleared after submit, and are never echoed back.

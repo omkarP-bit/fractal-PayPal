@@ -135,6 +135,7 @@ Fill in `.env`:
 | `PAYPAL_ENV` | `sandbox` (default and only supported value for local use) |
 | `FRACTAL_ENCRYPTION_KEY` | Application key that seals merchant PayPal secrets at rest. Use a random 32-byte value in production. |
 | `FRACTAL_PUBLIC_URL` | Public origin used to build webhook URLs, for example `https://fractal.onrender.com` |
+| `PUBLIC_TUNNEL_URL` | Local fallback origin when you run FRACTAL behind a tunnel; must be HTTPS |
 | `KIBANA_URL` | Live Kibana dashboard URL shown on `/demo` |
 | `DATABASE_URL` | PostgreSQL connection string |
 | `OPA_URL` | OPA server address |
@@ -160,9 +161,17 @@ Open <http://localhost:5173/signup> and complete the two steps:
 1. **Business and region.** Choose a country such as India or the USA. The region fixes the settlement currency, so
    amounts and currencies cannot silently default to USD. India is treated as cross-border only: the merchant prices
    export orders in USD, EUR, GBP, AUD, CAD, SGD or AED because PayPal does not support domestic INR checkout.
-2. **Connect PayPal.** Paste the sandbox app's Client ID and Secret. FRACTAL encrypts the secret with
-   `FRACTAL_ENCRYPTION_KEY`, gets an access token, registers
-   `https://<app>/webhooks/paypal/<provider_account_id>` with PayPal, and stores the returned webhook ID.
+2. **Connect PayPal.** Create a sandbox REST app yourself in the
+   [PayPal Developer Dashboard](https://developer.paypal.com/dashboard/applications/sandbox) → **Apps & Credentials**
+   → **Sandbox** → **Create App**. FRACTAL cannot generate PayPal Client IDs or Secrets; it consumes the app you create.
+   Paste that app's Client ID and Secret. FRACTAL encrypts the secret with `FRACTAL_ENCRYPTION_KEY`, gets an access
+   token, registers `https://<app>/webhooks/paypal/<provider_account_id>` with PayPal, and stores the returned webhook
+   ID.
+
+PayPal only accepts **public HTTPS** webhook URLs. Set `FRACTAL_PUBLIC_URL` to the public origin (for example the
+Render URL), or set `PUBLIC_TUNNEL_URL` to the HTTPS URL printed by a tunnel such as
+`cloudflared tunnel --url http://localhost:5173`. Without one of those, onboarding returns a clear
+"Public webhook URL required" message instead of a generic PayPal error.
 
 The merchant's secret is never returned to the browser or written to logs. Each merchant gets its own provider account
 and webhook registration. The receiver reads the account ID from the URL, loads that account's webhook ID and
