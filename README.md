@@ -224,6 +224,18 @@ Seeded dev users (change in `scripts/seed`): one customer, one merchant admin, o
 
 ## Run the demo
 
+To test a newly onboarded merchant instead of the seeded Acme Store, point the mock store at that merchant and restart
+it:
+
+```bash
+MERCHANT_ID=<merchant-id> docker compose up -d --force-recreate merchant-store
+```
+
+Then open <http://localhost:8090> and use the form, or share the checkout link
+`http://localhost:8090/pay?email=buyer@example.com`. Each visit creates a fresh order and redirects to PayPal Sandbox;
+the order reference and single-use claim code appear on the confirmation page after payment. Use a customer email that
+has a FRACTAL customer account (`buyer@example.com` is seeded).
+
 1. On the mock store, set the merchant handler to **Broken** (or use `/demo`).
 2. Pay through PayPal Sandbox. The order stays `PAYMENT_PENDING`.
 3. As the customer, open a case with the order reference and the claim code shown on the confirmation page. The store registers each code with FRACTAL at checkout, bound to the email entered on the storefront. Codes expire after 24 hours and are single-use.
