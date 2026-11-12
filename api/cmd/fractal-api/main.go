@@ -370,7 +370,7 @@ func main() {
 
 	srv := &http.Server{
 		Addr:              ":" + addr,
-		Handler:           webapi.CORS(mux),
+		Handler:           mux,
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 

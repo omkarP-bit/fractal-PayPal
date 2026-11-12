@@ -819,12 +819,7 @@ func (h *Handlers) publicBaseURL(r *http.Request) (string, error) {
 	base := strings.TrimRight(strings.TrimSpace(h.PublicBaseURL), "/")
 	if base == "" {
 		// Local development keeps the tunnel origin in PUBLIC_TUNNEL_URL.
-		// On Render, RENDER_EXTERNAL_URL is the stable public HTTPS origin, so
-		// a redeploy or restart no longer breaks the registered webhook URL.
 		base = strings.TrimRight(strings.TrimSpace(os.Getenv("PUBLIC_TUNNEL_URL")), "/")
-	}
-	if base == "" {
-		base = strings.TrimRight(strings.TrimSpace(os.Getenv("RENDER_EXTERNAL_URL")), "/")
 	}
 	if base == "" {
 		scheme := "http"
