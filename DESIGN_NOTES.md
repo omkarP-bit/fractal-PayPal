@@ -181,17 +181,33 @@ icon source.
 ### Demo controls
 
 - Grouped panels with flat title strips: webhook handling, concurrency, replay, seed
-  scenarios, charts and a danger-bordered reset section.
+  scenarios, live webhook activity and a danger-bordered reset section.
+- The old mock observability charts are gone. **Live webhook activity** polls real,
+  merchant-scoped event data every 10 seconds; **Live Kibana** links to the real
+  dashboard instead of drawing fake latency or replay charts.
 - Every state-changing or destructive demo action asks for confirmation, with wording
-  that states what will and will not change.
-- Charts use flat fills, ink strokes, dashed grids and hard-shadow tooltips. Simulated
-  behaviour is unchanged.
+  that states what will and will not change. Those scenario buttons remain simulated.
+
+### Merchant onboarding
+
+- `/signup` uses the same paper panel, yellow primary action, ink borders and hard
+  shadows as the rest of v2. A three-step `Stepper` shows business/region, Connect
+  PayPal and webhook live.
+- Region is a required select. Currency is derived from the region and is not silently
+  defaulted to USD; cross-border-only regions show a warning strip with the limitation.
+- The authenticated `/merchant/onboarding` screen reuses the detail-page pattern: a
+  main column for business/region and webhook status, plus a "What happens next" rail.
+- Secrets use `type="password"`, are cleared after submit, and are never echoed back.
+  Connected state shows only the public webhook URL, webhook ID, environment and dates.
+- Long webhook URLs truncate inside their row and keep a copy chip.
 
 ### Login
 
 - A 440px paper panel: role tiles, email, and one yellow **Continue** action.
 - Demo accounts fill the form; no password is requested in dev mode.
-- Errors are surfaced inline in plain language.
+- Merchant accounts show an optional password field for self-service signups. Seeded
+  demo accounts leave it blank and keep the passwordless dev path.
+- A plain signup link leads to `/signup`. Errors are surfaced inline in plain language.
 
 ## Accessibility
 

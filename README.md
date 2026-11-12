@@ -100,7 +100,7 @@ A hallucinating agent cannot cause an action because its claims never reach the 
 | AI service | Python, FastAPI, LangGraph, Pydantic |
 | Policy | Open Policy Agent, Rego |
 | Database | PostgreSQL |
-| Observability | OpenTelemetry to Elastic (Elasticsearch, Kibana) |
+| Observability | OpenTelemetry to Elastic (Elasticsearch + live Kibana dashboards) |
 | Frontend | React, TypeScript, Vite |
 | Mock merchant | Small storefront with a breakable webhook handler |
 | Local orchestration | Docker Compose, Makefile |
@@ -130,9 +130,12 @@ Fill in `.env`:
 
 | Variable | Purpose |
 |---|---|
-| `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET` | Sandbox app credentials |
-| `PAYPAL_WEBHOOK_ID` | Set after you register the webhook (step 3) |
+| `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET` | Optional legacy fallback. New merchants connect their own app in the UI. |
+| `PAYPAL_WEBHOOK_ID` | Optional legacy fallback used only by the seeded demo account |
 | `PAYPAL_ENV` | `sandbox` (default and only supported value for local use) |
+| `FRACTAL_ENCRYPTION_KEY` | Application key that seals merchant PayPal secrets at rest. Use a random 32-byte value in production. |
+| `FRACTAL_PUBLIC_URL` | Public origin used to build webhook URLs, for example `https://fractal.onrender.com` |
+| `KIBANA_URL` | Live Kibana dashboard URL shown on `/demo` |
 | `DATABASE_URL` | PostgreSQL connection string |
 | `OPA_URL` | OPA server address |
 | `ELASTIC_URL`, `ELASTIC_API_KEY` | Elastic endpoint and credentials |
@@ -146,39 +149,47 @@ Never commit `.env`. Use Sandbox credentials only.
 
 ```bash
 make up        # postgres, opa, elasticsearch, kibana, api, investigator, merchant-store, web
-make migrate   # apply database migrations
+make migrate-up # apply database migrations
 make seed      # users, merchant, provider account, products, policy bundle record
 ```
 
-### 3. Expose and register the webhook
+### 3. Onboard a merchant (self-service, no `.env` edits)
+
+Open <http://localhost:5173/signup> and complete the two steps:
+
+1. **Business and region.** Choose a country such as India or the USA. The region fixes the settlement currency, so
+   amounts and currencies cannot silently default to USD. India is treated as cross-border only: the merchant prices
+   export orders in USD, EUR, GBP, AUD, CAD, SGD or AED because PayPal does not support domestic INR checkout.
+2. **Connect PayPal.** Paste the sandbox app's Client ID and Secret. FRACTAL encrypts the secret with
+   `FRACTAL_ENCRYPTION_KEY`, gets an access token, registers
+   `https://<app>/webhooks/paypal/<provider_account_id>` with PayPal, and stores the returned webhook ID.
+
+The merchant's secret is never returned to the browser or written to logs. Each merchant gets its own provider account
+and webhook registration. The receiver reads the account ID from the URL, loads that account's webhook ID and
+credentials, verifies the signature with that merchant's app, and stores `provider_account_id` on every event.
+
+Existing merchants can reconnect or recover a deleted webhook from **PayPal setup** in the merchant navigation.
+
+### 4. Legacy local tunnel (seeded demo account only)
+
+Self-service onboarding is the normal path. For the seeded Acme Store, the old tunnel workflow still works:
 
 ```bash
 cloudflared tunnel --url http://localhost:8080   # or: ngrok http 8080
 ```
 
-In your PayPal Sandbox app, add a webhook pointing to:
+The seeded provider account ID is `00000000-0000-0000-0000-0000000000c2` (`provider_accounts.id`, **not**
+`merchants.id`). Its `PAYPAL_WEBHOOK_ID` fallback exists only for backwards compatibility.
 
-```text
-https://<your-tunnel-host>/api/v1/webhooks/paypal/<provider_account_id>
-```
-
-`<provider_account_id>` is `provider_accounts.id`, **not** `merchants.id`. For the seeded Acme Store:
-
-```text
-merchant id         00000000-0000-0000-0000-0000000000c1
-provider account id 00000000-0000-0000-0000-0000000000c2   <- use this in the webhook URL
-```
-
-Copy the webhook ID into `PAYPAL_WEBHOOK_ID` and restart the API. When the tunnel URL changes, run `make webhook-sync` to update the registered URL.
-
-### 4. Open the apps
+### 5. Open the apps
 
 | App | URL |
 |---|---|
 | FRACTAL web (customer and merchant) | http://localhost:5173 |
+| Merchant signup | http://localhost:5173/signup |
 | Mock merchant store | http://localhost:8090 |
-| Demo control panel | http://localhost:5173/demo |
-| Kibana (optional) | http://localhost:5601 |
+| Demo control panel (live webhook telemetry) | http://localhost:5173/demo |
+| Kibana (live logs and traces) | http://localhost:5601 |
 
 Seeded dev users (change in `scripts/seed`): one customer, one merchant admin, one merchant staff, one platform admin. Use the role switcher on the login page.
 
@@ -190,7 +201,7 @@ Seeded dev users (change in `scripts/seed`): one customer, one merchant admin, o
 2. Pay through PayPal Sandbox. The order stays `PAYMENT_PENDING`.
 3. As the customer, open a case with the order reference and the claim code shown on the confirmation page. The store registers each code with FRACTAL at checkout, bound to the email entered on the storefront. Codes expire after 24 hours and are single-use.
    For local testing without a live PayPal checkout: `make mint-claim ORDER=ORDER-DEMO-1`.
-4. As the merchant, review the evidence, the Elastic log, the AI diagnosis and the PolicyGuard decision, then reconcile.
+4. As the merchant, review the evidence, the live Elastic/Kibana telemetry, the AI diagnosis and the PolicyGuard decision, then reconcile.
 5. Try the negative cases from `/demo`: invalid-signature webhook, amount mismatch, refund without approval.
 6. Fire 50 concurrent webhook replays. Exactly one action executes.
 7. Open the audit timeline and run the hash-chain verification.
@@ -383,7 +394,7 @@ fractal/
 ```bash
 make up            # start all services
 make down          # stop all services
-make migrate       # run migrations
+make migrate-up    # run migrations
 make seed          # seed dev data
 make test          # Go, Python and web unit tests
 make policy-test   # OPA tests and policy lint
