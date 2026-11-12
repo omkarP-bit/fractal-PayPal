@@ -162,6 +162,91 @@ export interface CreateCaseRequest {
   description: string;
 }
 
+export interface Region {
+  code: string;
+  name: string;
+  currency: string;
+  currencies: string[];
+  cross_border_only: boolean;
+  note?: string;
+}
+
+export interface MerchantSummary {
+  id: string;
+  legal_name: string;
+  country: string;
+  currency: string;
+  onboarding_status: string;
+}
+
+export interface ProviderAccountSummary {
+  id: string;
+  provider: string;
+  environment: string;
+  client_id?: string;
+  webhook_id?: string;
+  webhook_url?: string;
+  webhook_status: string;
+  status: string;
+  webhook_registered_at?: string;
+  last_checked_at?: string;
+  webhook_error?: string;
+}
+
+export interface OnboardingStatus {
+  merchant: MerchantSummary;
+  provider_account: ProviderAccountSummary | null;
+  ready: boolean;
+  next_step: 'connect_paypal' | 'retry_webhook' | 'done';
+}
+
+export interface SignupRequest {
+  email: string;
+  password: string;
+  display_name: string;
+  legal_name: string;
+  country: string;
+  currency: string;
+}
+
+export interface SignupResponse {
+  token: string;
+  user: {
+    sub: string;
+    kind: string;
+    merchant_id: string;
+    merchant_name: string;
+    role: string;
+    permissions: string[];
+    email: string;
+    display_name: string;
+  };
+  merchant: MerchantSummary;
+  next_step: string;
+}
+
+export interface WebhookEventSummary {
+  event_id: string;
+  event_type: string;
+  provider_account_id: string;
+  signature_verified: boolean;
+  processing_status: string;
+  received_at: string;
+}
+
+export interface ObservabilitySummary {
+  generated_at: string;
+  merchant_id: string;
+  kibana_url: string;
+  provider_account: ProviderAccountSummary | null;
+  webhook_events: {
+    total: number;
+    last_24h: number;
+    last_received: string | null;
+  };
+  recent_events: WebhookEventSummary[];
+}
+
 interface ActionProposal {
   action_type: string;
   params: { amount_minor: number; currency: string };
@@ -218,6 +303,55 @@ class ApiClient {
       method: 'POST',
       body: JSON.stringify({ role, email }),
     });
+  }
+
+  async loginWithPassword(email: string, password: string): Promise<{ token: string; user: any }> {
+    return this.request<{ token: string; user: any }>('/api/v1/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ email, password }),
+    });
+  }
+
+  // Merchant onboarding
+  async getRegions(): Promise<Region[]> {
+    const response = await this.request<{ regions: Region[] }>('/api/v1/onboarding/regions');
+    return response.regions;
+  }
+
+  async signup(request: SignupRequest): Promise<SignupResponse> {
+    return this.request<SignupResponse>('/api/v1/onboarding/signup', {
+      method: 'POST',
+      body: JSON.stringify(request),
+    });
+  }
+
+  async getOnboardingStatus(): Promise<OnboardingStatus> {
+    return this.request<OnboardingStatus>('/api/v1/onboarding/status');
+  }
+
+  async connectPayPal(request: {
+    client_id: string;
+    client_secret: string;
+    environment: string;
+  }): Promise<{ provider_account: ProviderAccountSummary; merchant?: MerchantSummary }> {
+    return this.request<{ provider_account: ProviderAccountSummary; merchant?: MerchantSummary }>(
+      '/api/v1/onboarding/paypal',
+      {
+        method: 'POST',
+        body: JSON.stringify(request),
+      },
+    );
+  }
+
+  async reRegisterWebhook(): Promise<{ provider_account: ProviderAccountSummary }> {
+    return this.request<{ provider_account: ProviderAccountSummary }>(
+      '/api/v1/onboarding/paypal/re-register',
+      { method: 'POST' },
+    );
+  }
+
+  async getObservability(): Promise<ObservabilitySummary> {
+    return this.request<ObservabilitySummary>('/api/v1/observability/summary');
   }
 
   // Cases

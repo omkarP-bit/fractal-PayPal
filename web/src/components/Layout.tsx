@@ -8,6 +8,7 @@ import {
   Keyboard,
   LogOut,
   Moon,
+  PlugZap,
   Search,
   Sun,
   X,
@@ -35,6 +36,7 @@ const NAV_ITEMS: Record<Role, NavItem[]> = {
   ],
   MERCHANT: [
     { path: '/merchant/cases', label: 'Cases', icon: Inbox },
+    { path: '/merchant/onboarding', label: 'PayPal setup', icon: PlugZap },
     { path: '/demo', label: 'Demo controls', icon: FlaskConical },
   ],
 };
@@ -66,14 +68,14 @@ function Shell() {
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
-  const isLogin = location.pathname === '/login';
+  const isPublic = location.pathname === '/login' || location.pathname === '/signup';
   const role = roleFor(user);
   const homePath = role === 'MERCHANT' ? '/merchant/cases' : '/customer/cases';
   const isDemo = location.pathname.startsWith('/demo');
 
   useEffect(() => {
-    if (!user && !isLogin) navigate('/login', { replace: true });
-  }, [user, isLogin, navigate]);
+    if (!user && !isPublic) navigate('/login', { replace: true });
+  }, [user, isPublic, navigate]);
 
   useEffect(() => {
     applyTheme(theme);
@@ -81,7 +83,7 @@ function Shell() {
 
   // "g c" opens the cases list for the current role.
   useEffect(() => {
-    if (isLogin) return;
+    if (isPublic) return;
     let lastG = 0;
     const onKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
@@ -103,7 +105,7 @@ function Shell() {
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [homePath, isLogin, navigate]);
+  }, [homePath, isPublic, navigate]);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -123,7 +125,7 @@ function Shell() {
     };
   }, [menuOpen]);
 
-  if (isLogin) {
+  if (isPublic) {
     return (
       <main id="main-content" className="min-h-screen bg-bg">
         <Outlet />

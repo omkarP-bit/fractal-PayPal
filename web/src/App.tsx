@@ -7,6 +7,7 @@ import { CustomerCaseDetail } from './pages/customer/CaseDetail';
 import { NewCase } from './pages/customer/NewCase';
 import { MerchantDashboard } from './pages/merchant/Dashboard';
 import { MerchantCaseDetail } from './pages/merchant/CaseDetail';
+import { MerchantOnboardingPage, MerchantSignupPage } from './pages/merchant/Onboarding';
 import { DemoPanel } from './pages/demo/DemoPanel';
 
 const router = createBrowserRouter([
@@ -16,11 +17,13 @@ const router = createBrowserRouter([
     children: [
       { index: true, element: <CustomerDashboard /> },
       { path: 'login', element: <LoginPage /> },
+      { path: 'signup', element: <MerchantSignupPage /> },
       { path: 'customer/cases', element: <CustomerDashboard /> },
       { path: 'customer/cases/new', element: <NewCase /> },
       { path: 'customer/cases/:id', element: <CustomerCaseDetail /> },
       { path: 'merchant/cases', element: <MerchantDashboard /> },
       { path: 'merchant/cases/:id', element: <MerchantCaseDetail /> },
+      { path: 'merchant/onboarding', element: <MerchantOnboardingPage /> },
       { path: 'demo', element: <DemoPanel /> },
     ],
   },

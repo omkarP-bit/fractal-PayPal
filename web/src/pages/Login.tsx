@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { ArrowRight, Mail, Store, UserRound } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
+import { ArrowRight, LockKeyhole, Mail, Store, UserRound } from 'lucide-react';
 import { useAuthStore } from '../store/auth';
 import { apiClient } from '../services/api';
 import { Button } from '../components/ui/Button';
@@ -41,6 +41,7 @@ const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 export function LoginPage() {
   const [role, setRole] = useState<Role>('CUSTOMER');
   const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [touched, setTouched] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -57,7 +58,9 @@ export function LoginPage() {
 
     setLoading(true);
     try {
-      const session = await apiClient.devLogin(role, email.trim());
+      const session = password.trim()
+        ? await apiClient.loginWithPassword(email.trim(), password)
+        : await apiClient.devLogin(role, email.trim());
       login(session.token, session.user);
       navigate(role === 'MERCHANT' ? '/merchant/cases' : '/customer/cases');
     } catch (err) {
@@ -140,6 +143,20 @@ export function LoginPage() {
               leadingIcon={<Mail className="h-4 w-4" aria-hidden="true" strokeWidth={2.5} />}
             />
 
+            {role === 'MERCHANT' && (
+              <Input
+                label="Password (merchant accounts)"
+                type="password"
+                name="password"
+                autoComplete="current-password"
+                placeholder="Your signup password"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                hint="Leave blank for the seeded demo accounts."
+                leadingIcon={<LockKeyhole className="h-4 w-4" aria-hidden="true" strokeWidth={2.5} />}
+              />
+            )}
+
             {error && <ErrorNotice title="Sign-in failed" description={error} />}
 
             <Button
@@ -154,6 +171,12 @@ export function LoginPage() {
               <ArrowRight className="h-5 w-5" aria-hidden="true" strokeWidth={2.5} />
             </Button>
           </form>
+
+          <div className="mt-6 border-t-2 border-line pt-4 text-center">
+            <Link to="/signup" className="text-meta font-bold text-blue underline underline-offset-4">
+              New merchant? Create an account
+            </Link>
+          </div>
 
           <div className="mt-6 border-t-2 border-line pt-4">
             <p className="text-meta font-bold text-ink">Demo credentials</p>
