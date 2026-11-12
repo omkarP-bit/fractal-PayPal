@@ -136,7 +136,7 @@ function PayPalForm({
           onBlur={() => setTouched(true)}
           error={clientIdError}
           required
-          hint="From your PayPal Developer app → Live/Sandbox credentials."
+          hint="PayPal Developer Dashboard → Apps & Credentials → Sandbox → your app."
           leadingIcon={<KeyRound className="h-4 w-4" aria-hidden="true" strokeWidth={2.5} />}
         />
         <Input
@@ -165,6 +165,20 @@ function PayPalForm({
         ]}
         hint="Registering the webhook happens automatically for this merchant."
       />
+
+      <p className="rounded border-2 border-line bg-surface-alt p-3 text-meta leading-5 text-muted">
+        FRACTAL does not create PayPal apps. Create a sandbox REST app in the{' '}
+        <a
+          href="https://developer.paypal.com/dashboard/applications/sandbox"
+          target="_blank"
+          rel="noreferrer"
+          className="font-bold text-blue underline underline-offset-4"
+        >
+          PayPal Developer Dashboard
+        </a>{' '}
+        and paste its Client ID and Secret. Webhook registration needs a public HTTPS URL, so open FRACTAL through its
+        tunnel or set <code className="font-mono text-[11px]">FRACTAL_PUBLIC_URL</code> to the public origin.
+      </p>
 
       {error && <ErrorNotice title="PayPal connection failed" description={error} />}
 
