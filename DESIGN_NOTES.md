@@ -195,19 +195,26 @@ icon source.
   PayPal and webhook live.
 - Region is a required select. Currency is derived from the region and is not silently
   defaulted to USD; cross-border-only regions show a warning strip with the limitation.
-- The Connect PayPal panel links to the PayPal Developer Dashboard and states that
-  FRACTAL consumes an app the merchant creates; it cannot generate Client IDs or
-  Secrets. Webhook registration requires a public HTTPS origin, so the panel explains
+- Connect PayPal defaults to **one-click managed setup**: FRACTAL uses the deployment's
+  sandbox app and registers a dedicated webhook, so the merchant does not create a PayPal
+  app, copy credentials, or run a tunnel. The panel lists "No app to create / Nothing to
+  copy / No tunnel to run" and states the 10-webhook sandbox limit.
+- **Advanced → I have my own PayPal app** keeps the manual form. It links to the PayPal
+  Developer Dashboard and explains that FRACTAL consumes a merchant-created app. The
+  disclosure uses `aria-expanded`/`aria-controls` and keeps focus visible.
+- Webhook registration requires a public HTTPS origin. The panel explains
   `FRACTAL_PUBLIC_URL` / `PUBLIC_TUNNEL_URL` instead of surfacing PayPal's opaque
-  "Invalid data provided" error.
+  "Invalid data provided" error; this is an operator setting, not a merchant step.
 - The authenticated `/merchant/onboarding` screen reuses the detail-page pattern: a
   main column for business/region and webhook status, plus a "What happens next" rail.
 - Secrets use `type="password"`, are cleared after submit, and are never echoed back.
   Connected state shows only the public webhook URL, webhook ID, environment and dates.
-- The connected panel also shows the stored (non-secret) Client ID with a copy button and
-  an **Update credentials** action. The Secret is encrypted and cannot be displayed, so
-  rotation means generating a new Secret in PayPal and reconnecting; the provider
-  account ID and webhook URL stay stable.
+- The connected panel shows a **Managed by FRACTAL** badge for managed accounts and the
+  stored (non-secret) Client ID plus an **Update credentials** action for merchant-owned
+  apps. Managed accounts have no merchant secret to display or rotate.
+- For merchant-owned apps the Secret is encrypted and cannot be displayed, so rotation
+  means generating a new Secret in PayPal and reconnecting; the provider account ID and
+  webhook URL stay stable.
 - Long webhook URLs truncate inside their row and keep a copy chip.
 
 ### Login

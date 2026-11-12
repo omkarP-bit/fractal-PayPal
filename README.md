@@ -113,8 +113,10 @@ A hallucinating agent cannot cause an action because its claims never reach the 
 
 - Docker and Docker Compose
 - Go, Node.js and Python (only needed if you run services outside containers)
-- A PayPal Developer account with a Sandbox app and two Sandbox accounts (a business merchant and a personal buyer)
-- A tunnel tool (`cloudflared` or `ngrok`) so PayPal can reach your local webhook receiver
+- A PayPal Developer account with one Sandbox app. The deployment uses it for one-click onboarding; merchants do not
+  create apps or copy credentials.
+- For local development only, a tunnel tool (`cloudflared` or `ngrok`) so PayPal can reach the local webhook receiver. A
+  public HTTPS deployment needs no tunnel.
 - An API key for your chosen LLM provider (set through environment variables)
 - Several GB of free RAM for single-node Elasticsearch
 
@@ -130,7 +132,7 @@ Fill in `.env`:
 
 | Variable | Purpose |
 |---|---|
-| `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET` | Optional legacy fallback. New merchants connect their own app in the UI. |
+| `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET` | Deployment PayPal sandbox app. Powers one-click managed onboarding and remains the legacy fallback. |
 | `PAYPAL_WEBHOOK_ID` | Optional legacy fallback used only by the seeded demo account |
 | `PAYPAL_ENV` | `sandbox` (default and only supported value for local use) |
 | `FRACTAL_ENCRYPTION_KEY` | Application key that seals merchant PayPal secrets at rest. Use a random 32-byte value in production. |
@@ -154,32 +156,44 @@ make migrate-up # apply database migrations
 make seed      # users, merchant, provider account, products, policy bundle record
 ```
 
-### 3. Onboard a merchant (self-service, no `.env` edits)
+### 3. Onboard a merchant (self-service, one click)
 
 Open <http://localhost:5173/signup> and complete the two steps:
 
 1. **Business and region.** Choose a country such as India or the USA. The region fixes the settlement currency, so
    amounts and currencies cannot silently default to USD. India is treated as cross-border only: the merchant prices
    export orders in USD, EUR, GBP, AUD, CAD, SGD or AED because PayPal does not support domestic INR checkout.
-2. **Connect PayPal.** Create a sandbox REST app yourself in the
-   [PayPal Developer Dashboard](https://developer.paypal.com/dashboard/applications/sandbox) → **Apps & Credentials**
-   → **Sandbox** → **Create App**. FRACTAL cannot generate PayPal Client IDs or Secrets; it consumes the app you create.
-   Paste that app's Client ID and Secret. FRACTAL encrypts the secret with `FRACTAL_ENCRYPTION_KEY`, gets an access
-   token, registers `https://<app>/webhooks/paypal/<provider_account_id>` with PayPal, and stores the returned webhook
-   ID.
+2. **Connect PayPal.** Choose **Connect with FRACTAL sandbox app**. FRACTAL uses the deployment's
+   `PAYPAL_CLIENT_ID`/`PAYPAL_CLIENT_SECRET`, gets an access token, registers
+   `https://<app>/webhooks/paypal/<provider_account_id>` with PayPal, and stores the returned webhook ID. The merchant
+   does not create a PayPal app, copy credentials, or run a tunnel.
 
-PayPal only accepts **public HTTPS** webhook URLs. Set `FRACTAL_PUBLIC_URL` to the public origin (for example the
-Render URL), or set `PUBLIC_TUNNEL_URL` to the HTTPS URL printed by a tunnel such as
-`cloudflared tunnel --url http://localhost:5173`. Without one of those, onboarding returns a clear
-"Public webhook URL required" message instead of a generic PayPal error.
+   **Advanced.** Expand **I have my own PayPal app** to paste a merchant-owned sandbox app instead. FRACTAL encrypts
+   that secret with `FRACTAL_ENCRYPTION_KEY`. The Client ID is shown after connecting; the Secret is never returned.
+   **Update credentials** rotates it.
 
-The merchant's secret is never returned to the browser or written to logs. Each merchant gets its own provider account
-and webhook registration. The receiver reads the account ID from the URL, loads that account's webhook ID and
-credentials, verifies the signature with that merchant's app, and stores `provider_account_id` on every event.
+PayPal only accepts **public HTTPS** webhook URLs. The deployment sets `FRACTAL_PUBLIC_URL` to its public origin (for
+example the Render URL); local development can set `PUBLIC_TUNNEL_URL` to the HTTPS URL printed by
+`cloudflared tunnel --url http://localhost:5173`. This is an operator setting, not a merchant step. Without either one,
+onboarding returns a clear "Public webhook URL required" message instead of a generic PayPal error.
 
-After connecting, **PayPal setup** shows the stored **Client ID** with a copy button and the webhook status. The
-**Secret** is encrypted and can never be displayed. To rotate it, generate a new Secret in the PayPal app and choose
-**Update credentials**; the provider account ID and webhook URL stay the same.
+Managed accounts store **no merchant PayPal secret**: `credentials_ref` is `platform`, `external_account_id` is
+`PLATFORM:<merchant_id>`, and the receiver verifies signatures with the deployment app credentials. Merchant-owned apps
+keep their encrypted secret. In both cases the secret is never returned to the browser or written to logs, and each
+merchant still has its own provider account and webhook URL. Rotating the deployment's PayPal app invalidates managed
+webhooks, so re-register each merchant after changing `PAYPAL_CLIENT_ID`/`PAYPAL_CLIENT_SECRET`.
+
+**Sandbox webhook limit.** PayPal allows 10 webhooks per sandbox app, which is enough for the current testing cohort.
+When the limit is reached, onboarding returns a clear conflict and asks you to remove an unused webhook in the PayPal
+Developer Dashboard before retrying. Production onboarding would use PayPal Partner/Connect onboarding instead of a
+shared sandbox app.
+
+**Why not email or a message queue?** PayPal does not expose an API to create REST apps or read their secrets, and email
+is not a safe credential channel, so FRACTAL never asks merchants to email credentials. The webhook receiver is already
+FRACTAL's own endpoint; verified events are stored in PostgreSQL and drained by a DB-backed worker with
+`FOR UPDATE SKIP LOCKED`, so no external message queue is needed. A single shared webhook URL was rejected because the
+receiver uses the URL to resolve the merchant and its signing credentials; a shared URL would make attribution and
+signature verification ambiguous.
 
 Existing merchants can reconnect or recover a deleted webhook from **PayPal setup** in the merchant navigation.
 
