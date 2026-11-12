@@ -59,6 +59,7 @@ func main() {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /", handleStorefront)
+	mux.HandleFunc("GET /pay", handlePayLink)
 	mux.HandleFunc("POST /api/orders", handleCreateOrder)
 	mux.HandleFunc("GET /api/capture/{orderID}", handleCapture)
 	mux.HandleFunc("POST /webhooks/paypal", handleMerchantWebhook)
@@ -88,16 +89,28 @@ func handleStorefront(w http.ResponseWriter, r *http.Request) {
   <label>Email: <input type="email" name="email" value="buyer@example.com" required></label>
   <button type="submit">PayPal Checkout</button>
 </form>
+<p>Payment link: <a href="/pay?email=buyer@example.com">/pay?email=buyer@example.com</a></p>
+<p>Merchant: <code>%s</code></p>
 <p>Merchant webhook handler: <b>%v</b> — <a href="/admin/break">toggle</a></p>
 </body></html>`
 	w.Header().Set("Content-Type", "text/html")
-	fmt.Fprintf(w, html, b)
+	fmt.Fprintf(w, html, merchantID, b)
 }
 
 // ---------- checkout ----------
 
 func handleCreateOrder(w http.ResponseWriter, r *http.Request) {
-	email := r.FormValue("email")
+	startCheckout(w, r, r.FormValue("email"))
+}
+
+// handlePayLink creates a fresh checkout from a shareable link. Each visit
+// creates a new order so the claim code is unique and single-use.
+func handlePayLink(w http.ResponseWriter, r *http.Request) {
+	startCheckout(w, r, r.URL.Query().Get("email"))
+}
+
+func startCheckout(w http.ResponseWriter, r *http.Request, email string) {
+	email = strings.TrimSpace(email)
 	if email == "" {
 		email = "buyer@example.com"
 	}
