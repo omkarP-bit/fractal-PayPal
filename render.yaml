@@ -65,10 +65,6 @@ services:
           name: fractal-api
           type: web
           envVarKey: RENDER_EXTERNAL_URL
-      # The seeded-user shortcut is off on public deployments. Imported demo
-      # users get a password with cmd/setpassword (see the deploy guide).
-      - key: FRACTAL_DEV_LOGIN_ENABLED
-        value: "false"
       - key: FRACTAL_JWT_SECRET
         generateValue: true
       - key: FRACTAL_ENCRYPTION_KEY

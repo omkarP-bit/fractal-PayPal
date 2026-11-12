@@ -3,8 +3,6 @@ package webapi
 import (
 	"database/sql"
 	"net/http"
-	"os"
-	"strconv"
 	"strings"
 
 	"fractal/api/internal/auth"
@@ -121,14 +119,8 @@ type loginUser struct {
 
 // DevLogin is a development-only credential exchange. It reads a seeded user
 // and issues the same HS256 JWT the middleware verifies. No password is
-// checked, so it is opt-in via FRACTAL_DEV_LOGIN_ENABLED and off by default in
-// deployed environments.
+// checked, and this endpoint is intentionally not part of a production build.
 func (h *Handlers) DevLogin(w http.ResponseWriter, r *http.Request) {
-	if !devLoginEnabled() {
-		writeProblem(w, http.StatusNotFound, "Not found", "This endpoint is not enabled.")
-		return
-	}
-
 	var req devLoginRequest
 	if err := decodeJSON(r, &req); err != nil {
 		writeProblem(w, http.StatusBadRequest, "Invalid request", "Expected JSON with a role and optional email.")
@@ -230,13 +222,4 @@ func (h *Handlers) DevLogin(w http.ResponseWriter, r *http.Request) {
 			DisplayName:  displayName,
 		},
 	})
-}
-
-// devLoginEnabled reports whether the seeded-user shortcut is available. It is
-// opt-in: a public deployment must not be able to impersonate passwordless
-// demo accounts just by knowing their email. docker compose enables it for
-// local development and demos.
-func devLoginEnabled() bool {
-	enabled, err := strconv.ParseBool(strings.TrimSpace(os.Getenv("FRACTAL_DEV_LOGIN_ENABLED")))
-	return err == nil && enabled
 }
