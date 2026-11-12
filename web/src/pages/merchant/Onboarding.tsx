@@ -10,6 +10,7 @@ import {
   RefreshCw,
   ShieldCheck,
   Store,
+  Wand2,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { apiClient, type OnboardingStatus, type ProviderAccountSummary, type Region } from '../../services/api';
@@ -167,7 +168,7 @@ function PayPalForm({
       />
 
       <p className="rounded border-2 border-line bg-surface-alt p-3 text-meta leading-5 text-muted">
-        FRACTAL does not create PayPal apps. Create a sandbox REST app in the{' '}
+        This advanced path uses a PayPal app you own. Create a sandbox REST app in the{' '}
         <a
           href="https://developer.paypal.com/dashboard/applications/sandbox"
           target="_blank"
@@ -176,8 +177,8 @@ function PayPalForm({
         >
           PayPal Developer Dashboard
         </a>{' '}
-        and paste its Client ID and Secret. Webhook registration needs a public HTTPS URL, so open FRACTAL through its
-        tunnel or set <code className="font-mono text-[11px]">FRACTAL_PUBLIC_URL</code> to the public origin.
+        and paste its Client ID and Secret. Webhook registration needs the deployment&apos;s public HTTPS origin; FRACTAL
+        configures that once for managed setup, so you do not run a tunnel.
       </p>
 
       {error && <ErrorNotice title="PayPal connection failed" description={error} />}
@@ -266,7 +267,11 @@ function ConnectedPanel({
       <div className="flex flex-wrap items-center justify-between gap-2 border-b-2 border-line bg-surface-alt px-4 py-3">
         <div className="min-w-0">
           <h2 className="text-[12px] font-bold uppercase tracking-[0.04em] text-ink">Webhook status</h2>
-          <p className="mt-0.5 text-meta text-muted">PayPal signs every delivery with this merchant&apos;s app.</p>
+          <p className="mt-0.5 text-meta text-muted">
+            {account.managed
+              ? "FRACTAL registers and signs this merchant's webhook with its own sandbox app."
+              : "PayPal signs every delivery with this merchant's app."}
+          </p>
         </div>
         <StatusPill
           meta={{ label: webhookLabel(account.webhook_status), tone: webhookTone(account.webhook_status) }}
@@ -287,9 +292,13 @@ function ConnectedPanel({
           </dd>
         </div>
         <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
-          <dt className="meta-label">PayPal Client ID</dt>
+          <dt className="meta-label">PayPal app</dt>
           <dd className="flex min-w-0 items-center gap-2">
-            {account.client_id ? (
+            {account.managed ? (
+              <span className="rounded border-2 border-line bg-yellow px-2 py-0.5 text-[11px] font-extrabold uppercase tracking-[0.04em] text-[color:var(--text-on-yellow)]">
+                Managed by FRACTAL
+              </span>
+            ) : account.client_id ? (
               <>
                 <span className="truncate font-mono text-[12px] text-ink">{account.client_id}</span>
                 <CopyChip value={account.client_id} label="Copy" title="Copy Client ID" />
@@ -337,14 +346,85 @@ function ConnectedPanel({
           Re-register webhook
         </Button>
         <Button variant="outline" size="sm" onClick={onUpdateCredentials}>
-          Update credentials
+          {account.managed ? 'Use my own app' : 'Update credentials'}
         </Button>
       </div>
       <p className="border-t-2 border-line px-4 py-3 text-[11px] leading-5 text-muted">
-        The Client ID is shown above. The Secret is stored encrypted and can never be displayed. To rotate it, generate a
-        new Secret in the PayPal app and choose <span className="font-bold text-ink">Update credentials</span>.
+        {account.managed ? (
+          <>
+            This connection is managed by FRACTAL. No PayPal secret is stored on this merchant. To use your own PayPal
+            app instead, choose <span className="font-bold text-ink">Use my own app</span>.
+          </>
+        ) : (
+          <>
+            The Client ID is shown above. The Secret is stored encrypted and can never be displayed. To rotate it,
+            generate a new Secret in the PayPal app and choose{' '}
+            <span className="font-bold text-ink">Update credentials</span>.
+          </>
+        )}
       </p>
     </section>
+  );
+}
+
+/** One-click path: FRACTAL registers a webhook with its own sandbox app. */
+function ManagedConnectPanel({
+  onConnect,
+  connecting,
+  hasAccount,
+}: {
+  onConnect: () => void;
+  connecting: boolean;
+  hasAccount: boolean;
+}) {
+  return (
+    <div className="space-y-4">
+      <div className="rounded border-2 border-line bg-surface-alt p-4">
+        <div className="flex items-start gap-3">
+          <Wand2 className="mt-0.5 h-5 w-5 shrink-0 text-ink" aria-hidden="true" strokeWidth={2.5} />
+          <div className="min-w-0">
+            <h3 className="text-body font-extrabold text-ink">One-click sandbox setup</h3>
+            <p className="mt-1 text-meta leading-5 text-muted">
+              Use FRACTAL&apos;s PayPal sandbox app. You do not need a PayPal developer account, a REST app, credentials,
+              or a tunnel. FRACTAL registers a dedicated webhook for this merchant automatically.
+            </p>
+          </div>
+        </div>
+        <ul className="mt-3 grid gap-2 sm:grid-cols-3">
+          {['No app to create', 'Nothing to copy', 'No tunnel to run'].map((item) => (
+            <li
+              key={item}
+              className="flex items-center gap-2 rounded border-2 border-line bg-surface px-3 py-2 text-[11px] font-bold text-ink"
+            >
+              <CheckCircle2
+                className="h-4 w-4 shrink-0 text-[color:var(--success-ink)]"
+                aria-hidden="true"
+                strokeWidth={2.5}
+              />
+              {item}
+            </li>
+          ))}
+        </ul>
+      </div>
+
+      <p className="text-[11px] leading-5 text-muted">
+        PayPal sandbox apps allow 10 webhooks. That is enough for this testing cohort; if the limit is reached, FRACTAL
+        tells you which registration to remove before retrying.
+      </p>
+
+      <Button
+        type="button"
+        variant="primary"
+        size="lg"
+        className="w-full sm:w-auto"
+        onClick={onConnect}
+        isLoading={connecting}
+        loadingText="Registering webhook…"
+        icon={<Wand2 className="h-5 w-5" aria-hidden="true" strokeWidth={2.5} />}
+      >
+        {hasAccount ? 'Retry with FRACTAL sandbox app' : 'Connect with FRACTAL sandbox app'}
+      </Button>
+    </div>
   );
 }
 
@@ -355,6 +435,8 @@ export function MerchantSignupPage() {
   const [fields, setFields] = useState<SignupFields>(EMPTY_FIELDS);
   const [touched, setTouched] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [managedConnecting, setManagedConnecting] = useState(false);
+  const [showManual, setShowManual] = useState(false);
   const [error, setError] = useState('');
   const [account, setAccount] = useState<{ merchant: OnboardingStatus['merchant']; connected: boolean } | null>(
     null,
@@ -414,11 +496,36 @@ export function MerchantSignupPage() {
       });
       login(result.token, result.user as User);
       setAccount({ merchant: result.merchant, connected: false });
-      toast.success('Account created', { description: 'Now connect your PayPal sandbox app.' });
+      toast.success('Account created', { description: 'Now connect PayPal with one click.' });
     } catch (err) {
       setError(apiErrorMessage(err, 'We could not create your account. Try again.'));
     } finally {
       setLoading(false);
+    }
+  };
+
+  const connectManaged = async () => {
+    setManagedConnecting(true);
+    setError('');
+    try {
+      await apiClient.connectManagedPayPal();
+      setAccount((current) =>
+        current
+          ? {
+              ...current,
+              connected: true,
+              merchant: { ...current.merchant, onboarding_status: 'ACTIVE' },
+            }
+          : current,
+      );
+      setShowManual(false);
+      toast.success('PayPal connected', {
+        description: 'FRACTAL registered a dedicated webhook for this merchant.',
+      });
+    } catch (err) {
+      setError(apiErrorMessage(err, 'We could not register the managed PayPal webhook.'));
+    } finally {
+      setManagedConnecting(false);
     }
   };
 
@@ -580,17 +687,60 @@ export function MerchantSignupPage() {
                 <div className="mb-4 flex items-start gap-3 border-b-2 border-line pb-4">
                   <PlugZap className="mt-0.5 h-5 w-5 text-ink" aria-hidden="true" strokeWidth={2.5} />
                   <div>
-                    <h2 className="text-section font-bold text-ink">Connect your PayPal sandbox app</h2>
+                    <h2 className="text-section font-bold text-ink">Connect PayPal</h2>
                     <p className="mt-0.5 text-body text-muted">
-                      FRACTAL gets a token, registers a webhook for this merchant, and stores the returned webhook ID.
+                      One click uses FRACTAL&apos;s sandbox app. No PayPal app, credentials, or tunnel needed.
                     </p>
                   </div>
                 </div>
-                <PayPalForm
-                  onConnected={() => {
-                    setAccount((current) => (current ? { ...current, connected: true } : current));
-                  }}
-                />
+                {error && <ErrorNotice title="PayPal setup failed" description={error} className="mb-4" />}
+                <div className="space-y-4">
+                  <ManagedConnectPanel
+                    onConnect={() => void connectManaged()}
+                    connecting={managedConnecting}
+                    hasAccount={false}
+                  />
+
+                  <div className="flex items-center gap-3">
+                    <span className="h-0.5 flex-1 bg-line" aria-hidden="true" />
+                    <span className="text-[11px] font-bold uppercase tracking-[0.08em] text-muted">Advanced</span>
+                    <span className="h-0.5 flex-1 bg-line" aria-hidden="true" />
+                  </div>
+
+                  {showManual ? (
+                    <div id="signup-paypal-manual-form" className="space-y-4">
+                      <PayPalForm
+                        onConnected={() => {
+                          setError('');
+                          setAccount((current) =>
+                            current
+                              ? {
+                                  ...current,
+                                  connected: true,
+                                  merchant: { ...current.merchant, onboarding_status: 'ACTIVE' },
+                                }
+                              : current,
+                          );
+                          setShowManual(false);
+                        }}
+                      />
+                      <Button type="button" variant="tertiary" size="sm" onClick={() => setShowManual(false)}>
+                        Use FRACTAL&apos;s sandbox app instead
+                      </Button>
+                    </div>
+                  ) : (
+                    <Button
+                      type="button"
+                      variant="tertiary"
+                      size="sm"
+                      aria-expanded={showManual}
+                      aria-controls={showManual ? 'signup-paypal-manual-form' : undefined}
+                      onClick={() => setShowManual(true)}
+                    >
+                      I have my own PayPal app
+                    </Button>
+                  )}
+                </div>
               </section>
             )}
           </div>
@@ -613,6 +763,8 @@ export function MerchantOnboardingPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [reRegistering, setReRegistering] = useState(false);
+  const [managedConnecting, setManagedConnecting] = useState(false);
+  const [showManual, setShowManual] = useState(false);
   const [showCredentials, setShowCredentials] = useState(false);
   const navigate = useNavigate();
 
@@ -664,6 +816,33 @@ export function MerchantOnboardingPage() {
     }
   };
 
+  const connectManaged = async () => {
+    setManagedConnecting(true);
+    setError('');
+    try {
+      const result = await apiClient.connectManagedPayPal();
+      setStatus((current) =>
+        current
+          ? {
+              ...current,
+              provider_account: result.provider_account,
+              ready: result.provider_account.webhook_status === 'REGISTERED',
+              next_step: result.provider_account.webhook_status === 'REGISTERED' ? 'done' : 'retry_webhook',
+            }
+          : current,
+      );
+      setShowManual(false);
+      setShowCredentials(false);
+      toast.success('PayPal connected', {
+        description: 'FRACTAL registered a dedicated webhook with its sandbox app.',
+      });
+    } catch (err) {
+      setError(apiErrorMessage(err, 'We could not register the managed PayPal webhook.'));
+    } finally {
+      setManagedConnecting(false);
+    }
+  };
+
   const region = useMemo(
     () => regions.find((item) => item.code === status?.merchant.country),
     [regions, status?.merchant.country],
@@ -673,7 +852,7 @@ export function MerchantOnboardingPage() {
     <div className="page-fill gap-5">
       <PageHeader
         title="PayPal setup"
-        description="Connect this merchant's PayPal sandbox app. Region and currency are locked when the account is created."
+        description="Connect this merchant to PayPal. One click uses FRACTAL's sandbox app; advanced users can bring their own. Region and currency are locked when the account is created."
         actions={
           status && (
             <StatusPill
@@ -717,10 +896,16 @@ export function MerchantOnboardingPage() {
                   <PlugZap className="mt-0.5 h-5 w-5 text-ink" aria-hidden="true" strokeWidth={2.5} />
                   <div className="min-w-0">
                     <h2 className="text-section font-bold text-ink">
-                      {status.provider_account ? 'Update PayPal credentials' : 'Connect PayPal'}
+                      {showCredentials
+                        ? 'Update PayPal credentials'
+                        : status.provider_account
+                          ? 'Reconnect PayPal'
+                          : 'Connect PayPal'}
                     </h2>
                     <p className="mt-0.5 text-body text-muted">
-                      Submitting again keeps the same provider account ID, so the webhook URL stays stable.
+                      {showCredentials
+                        ? 'Submitting again keeps the same provider account ID, so the webhook URL stays stable.'
+                        : "One click uses FRACTAL's sandbox app. Bring your own app under Advanced if you prefer."}
                     </p>
                   </div>
                   {status.ready && showCredentials && (
@@ -730,21 +915,75 @@ export function MerchantOnboardingPage() {
                   )}
                 </div>
                 {error && <ErrorNotice title="PayPal setup failed" description={error} className="mb-4" />}
-                <PayPalForm
-                  onConnected={(account) => {
-                    setShowCredentials(false);
-                    setStatus((current) =>
-                      current
-                        ? {
-                            ...current,
-                            provider_account: account,
-                            ready: account.webhook_status === 'REGISTERED',
-                            next_step: account.webhook_status === 'REGISTERED' ? 'done' : 'retry_webhook',
-                          }
-                        : current,
-                    );
-                  }}
-                />
+                {showCredentials ? (
+                  <PayPalForm
+                    onConnected={(account) => {
+                      setError('');
+                      setShowCredentials(false);
+                      setShowManual(false);
+                      setStatus((current) =>
+                        current
+                          ? {
+                              ...current,
+                              provider_account: account,
+                              ready: account.webhook_status === 'REGISTERED',
+                              next_step: account.webhook_status === 'REGISTERED' ? 'done' : 'retry_webhook',
+                            }
+                          : current,
+                      );
+                    }}
+                  />
+                ) : (
+                  <div className="space-y-4">
+                    <ManagedConnectPanel
+                      onConnect={() => void connectManaged()}
+                      connecting={managedConnecting}
+                      hasAccount={Boolean(status.provider_account)}
+                    />
+
+                    <div className="flex items-center gap-3">
+                      <span className="h-0.5 flex-1 bg-line" aria-hidden="true" />
+                      <span className="text-[11px] font-bold uppercase tracking-[0.08em] text-muted">Advanced</span>
+                      <span className="h-0.5 flex-1 bg-line" aria-hidden="true" />
+                    </div>
+
+                    {showManual ? (
+                      <div id="paypal-manual-form" className="space-y-4">
+                        <PayPalForm
+                          onConnected={(account) => {
+                            setError('');
+                            setShowManual(false);
+                            setShowCredentials(false);
+                            setStatus((current) =>
+                              current
+                                ? {
+                                    ...current,
+                                    provider_account: account,
+                                    ready: account.webhook_status === 'REGISTERED',
+                                    next_step: account.webhook_status === 'REGISTERED' ? 'done' : 'retry_webhook',
+                                  }
+                                : current,
+                            );
+                          }}
+                        />
+                        <Button type="button" variant="tertiary" size="sm" onClick={() => setShowManual(false)}>
+                          Use FRACTAL&apos;s sandbox app instead
+                        </Button>
+                      </div>
+                    ) : (
+                      <Button
+                        type="button"
+                        variant="tertiary"
+                        size="sm"
+                        aria-expanded={showManual}
+                        aria-controls={showManual ? 'paypal-manual-form' : undefined}
+                        onClick={() => setShowManual(true)}
+                      >
+                        I have my own PayPal app
+                      </Button>
+                    )}
+                  </div>
+                )}
               </section>
             ) : (
               <section className="panel flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -772,9 +1011,9 @@ export function MerchantOnboardingPage() {
               </div>
               <ol className="divide-y-2 divide-line">
                 {[
-                  ['Encrypted storage', 'The PayPal secret is sealed with the application key before it reaches PostgreSQL.'],
+                  ['No app needed by default', "The recommended path uses FRACTAL's sandbox app and registers a dedicated webhook for this merchant."],
                   ['Automatic registration', 'FRACTAL calls PayPal and stores the returned webhook ID on this merchant.'],
-                  ['Per-merchant verification', 'The receiver resolves this merchant from the URL and verifies each signature with its own app.'],
+                  ['Per-merchant verification', 'The receiver resolves this merchant from the URL and verifies each signature with the configured app.'],
                   ['Merchant-scoped events', 'Every stored event carries this provider account ID, so cases stay scoped to this store.'],
                 ].map(([title, description], index) => (
                   <li key={title} className="flex gap-3 px-4 py-3">
@@ -793,7 +1032,8 @@ export function MerchantOnboardingPage() {
             <section className="panel-inset p-4">
               <p className="text-meta font-bold text-ink">Safety</p>
               <p className="mt-1 text-[12px] leading-5 text-muted">
-                The stored secret is never returned to the browser or written to logs. Requests to the AI investigator never
+                PayPal credentials are never returned to the browser or written to logs. Managed accounts keep no
+                merchant secret; manual accounts store only an encrypted secret. Requests to the AI investigator never
                 include PayPal credentials.
               </p>
             </section>

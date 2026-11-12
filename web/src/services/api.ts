@@ -184,6 +184,7 @@ export interface ProviderAccountSummary {
   provider: string;
   environment: string;
   client_id?: string;
+  managed: boolean;
   webhook_id?: string;
   webhook_url?: string;
   webhook_status: string;
@@ -340,6 +341,13 @@ class ApiClient {
         method: 'POST',
         body: JSON.stringify(request),
       },
+    );
+  }
+
+  async connectManagedPayPal(): Promise<{ provider_account: ProviderAccountSummary; merchant?: MerchantSummary }> {
+    return this.request<{ provider_account: ProviderAccountSummary; merchant?: MerchantSummary }>(
+      '/api/v1/onboarding/paypal/managed',
+      { method: 'POST' },
     );
   }
 
