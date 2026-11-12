@@ -1,21 +1,10 @@
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Cell,
-  Line,
-  LineChart,
-  Pie,
-  PieChart,
-  ResponsiveContainer,
-  Tooltip as ChartTooltip,
-  XAxis,
-  YAxis,
-} from 'recharts';
-import {
+  Activity,
   CheckCircle2,
+  ExternalLink,
   FlaskConical,
+  Radio,
   RefreshCw,
   RotateCcw,
   Server,
@@ -27,29 +16,9 @@ import { Button } from '../../components/ui/Button';
 import { ConfirmDialog } from '../../components/ui/Dialog';
 import { PageHeader } from '../../components/ui/Panel';
 import { StatusPill } from '../../components/ui/StatusPill';
-
-const MOCK_REPLAY_DATA = [
-  { name: 'Attempt 1', success: 45, failed: 5 },
-  { name: 'Attempt 2', success: 44, failed: 6 },
-  { name: 'Attempt 3', success: 46, failed: 4 },
-  { name: 'Attempt 4', success: 45, failed: 5 },
-  { name: 'Attempt 5', success: 47, failed: 3 },
-];
-
-const MOCK_LATENCY_DATA = [
-  { name: 'Webhook', latency: 120 },
-  { name: 'Verify', latency: 85 },
-  { name: 'Store', latency: 45 },
-  { name: 'Process', latency: 30 },
-  { name: 'Execute', latency: 150 },
-];
-
-const MOCK_DISTRIBUTION = [
-  { name: 'Approved', value: 65, color: 'var(--success)' },
-  { name: 'Needs approval', value: 20, color: 'var(--warning)' },
-  { name: 'Waiting', value: 10, color: 'var(--info)' },
-  { name: 'Blocked', value: 5, color: 'var(--danger)' },
-];
+import { ErrorNotice, Skeleton } from '../../components/ui/States';
+import { apiClient, type ObservabilitySummary } from '../../services/api';
+import { apiErrorMessage, formatAbsolute, sentenceCase } from '../../lib/format';
 
 interface DemoAction {
   title: string;
@@ -118,6 +87,34 @@ export function DemoPanel() {
   const [isRunning, setIsRunning] = useState(false);
   const [action, setAction] = useState<DemoAction | null>(null);
   const [actionBusy, setActionBusy] = useState(false);
+  const [live, setLive] = useState<ObservabilitySummary | null>(null);
+  const [liveError, setLiveError] = useState('');
+  const [liveLoading, setLiveLoading] = useState(true);
+
+  // Real telemetry, not a mocked dashboard. Polling keeps the panel current;
+  // the heavy visualisation lives in the real Kibana instance linked below.
+  useEffect(() => {
+    let active = true;
+    const load = async () => {
+      try {
+        const summary = await apiClient.getObservability();
+        if (!active) return;
+        setLive(summary);
+        setLiveError('');
+      } catch (err) {
+        if (!active) return;
+        setLiveError(apiErrorMessage(err, 'Live webhook telemetry is unavailable.'));
+      } finally {
+        if (active) setLiveLoading(false);
+      }
+    };
+    void load();
+    const timer = window.setInterval(() => void load(), 10000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, []);
 
   const runAction = async () => {
     if (!action) return;
@@ -170,7 +167,7 @@ export function DemoPanel() {
     <div className="page-fill gap-5">
       <PageHeader
         title="Demo controls"
-        description="Simulated, local-only tools for testing FRACTAL flows."
+        description="Simulated scenario tools plus live, merchant-scoped webhook telemetry."
         actions={
           <span className="inline-flex items-center gap-1.5 rounded-pill border-2 border-line bg-warning px-2.5 py-1 text-[11px] font-bold uppercase tracking-[0.04em] text-[color:var(--warning-ink)] shadow-hard">
             <FlaskConical className="h-3.5 w-3.5" aria-hidden="true" strokeWidth={2.5} />
@@ -357,111 +354,143 @@ export function DemoPanel() {
         </Group>
       </div>
 
-      <div className="grid gap-5 lg:grid-cols-3">
-        <Group title="Policy decisions" description="Last 24 hours">
-          <div className="relative h-52">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={MOCK_DISTRIBUTION}
-                  dataKey="value"
-                  nameKey="name"
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={54}
-                  outerRadius={82}
-                  stroke="var(--ink)"
-                  strokeWidth={2}
-                >
-                  {MOCK_DISTRIBUTION.map((entry) => (
-                    <Cell key={entry.name} fill={entry.color} />
-                  ))}
-                </Pie>
-                <ChartTooltip />
-              </PieChart>
-            </ResponsiveContainer>
-            <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
-              <span className="text-[32px] font-extrabold leading-9 tabular-nums text-ink">100</span>
-              <span className="text-[11px] font-bold uppercase tracking-[0.04em] text-muted">
-                decisions
-              </span>
+      <div className="grid gap-5 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+        <Group
+          title="Live webhook activity"
+          description="Verified events for this merchant, refreshed every 10 seconds."
+          aside={
+            <span className="inline-flex items-center gap-1.5 rounded-pill border-2 border-line bg-success px-2 py-0.5 text-[11px] font-bold uppercase tracking-[0.04em] text-[color:var(--success-ink)]">
+              <Radio className="h-3.5 w-3.5 animate-pulse" aria-hidden="true" strokeWidth={2.5} />
+              Live
+            </span>
+          }
+        >
+          {liveLoading ? (
+            <div className="space-y-3">
+              <Skeleton className="h-20 w-full" />
+              <Skeleton className="h-32 w-full" />
             </div>
-          </div>
-          <ul className="mt-3 space-y-1.5 border-t-2 border-line pt-3">
-            {MOCK_DISTRIBUTION.map((entry) => (
-              <li key={entry.name} className="flex items-center justify-between gap-3 text-[12px]">
-                <span className="flex items-center gap-2 text-ink">
-                  <span
-                    className="h-2.5 w-2.5 border-2 border-line"
-                    style={{ backgroundColor: entry.color }}
-                    aria-hidden="true"
-                  />
-                  {entry.name}
-                </span>
-                <span className="font-mono font-bold tabular-nums text-ink">{entry.value}%</span>
-              </li>
-            ))}
-          </ul>
+          ) : liveError && !live ? (
+            <ErrorNotice title="Live telemetry unavailable" description={liveError} />
+          ) : live ? (
+            <>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                {[
+                  ['Events stored', live.webhook_events.total],
+                  ['Last 24 hours', live.webhook_events.last_24h],
+                ].map(([label, value]) => (
+                  <div key={String(label)} className="rounded border-2 border-line bg-surface-alt p-3">
+                    <p className="text-[28px] font-extrabold leading-8 tabular-nums text-ink">{value}</p>
+                    <p className="text-[11px] font-bold uppercase tracking-[0.04em] text-muted">{label}</p>
+                  </div>
+                ))}
+                <div className="rounded border-2 border-line bg-surface-alt p-3">
+                  <p className="text-body font-extrabold leading-6 text-ink">
+                    {live.webhook_events.last_received
+                      ? formatAbsolute(live.webhook_events.last_received)
+                      : 'No events yet'}
+                  </p>
+                  <p className="text-[11px] font-bold uppercase tracking-[0.04em] text-muted">Last received</p>
+                </div>
+              </div>
+
+              <div className="mt-4 overflow-x-auto border-2 border-line">
+                <table className="w-full min-w-[520px] border-collapse text-left">
+                  <thead>
+                    <tr className="border-b-2 border-line bg-surface-alt">
+                      <th className="px-3 py-2 text-[11px] font-bold uppercase tracking-[0.04em] text-ink">Event</th>
+                      <th className="px-3 py-2 text-[11px] font-bold uppercase tracking-[0.04em] text-ink">Signature</th>
+                      <th className="px-3 py-2 text-[11px] font-bold uppercase tracking-[0.04em] text-ink">Status</th>
+                      <th className="px-3 py-2 text-[11px] font-bold uppercase tracking-[0.04em] text-ink">Received</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {live.recent_events.length === 0 ? (
+                      <tr>
+                        <td colSpan={4} className="px-3 py-6 text-center text-meta text-muted">
+                          No webhook events have arrived for this merchant yet.
+                        </td>
+                      </tr>
+                    ) : (
+                      live.recent_events.map((event) => (
+                        <tr key={event.event_id} className="border-b-2 border-line last:border-b-0">
+                          <td className="px-3 py-2">
+                            <p className="truncate text-[12px] font-bold text-ink">{event.event_type}</p>
+                            <p className="truncate font-mono text-[11px] text-muted">{event.event_id}</p>
+                          </td>
+                          <td className="px-3 py-2">
+                            <StatusPill
+                              size="sm"
+                              meta={{
+                                label: event.signature_verified ? 'Verified' : 'Rejected',
+                                tone: event.signature_verified ? 'success' : 'danger',
+                              }}
+                            />
+                          </td>
+                          <td className="px-3 py-2 text-[12px] font-medium text-ink">
+                            {sentenceCase(event.processing_status)}
+                          </td>
+                          <td className="px-3 py-2 text-[12px] text-muted">{formatAbsolute(event.received_at)}</td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          ) : null}
         </Group>
 
-        <Group
-          title="Webhook latency"
-          description="Milliseconds by pipeline stage"
-          className="lg:col-span-2"
-        >
-          <div className="h-64">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={MOCK_LATENCY_DATA} margin={{ top: 8, right: 8, left: -18, bottom: 0 }}>
-                <CartesianGrid stroke="var(--border-color)" strokeDasharray="3 3" vertical={false} />
-                <XAxis
-                  dataKey="name"
-                  tick={{ fontSize: 11 }}
-                  tickLine={false}
-                  axisLine={false}
-                />
-                <YAxis tick={{ fontSize: 11 }} tickLine={false} axisLine={false} />
-                <ChartTooltip />
-                <Line
-                  type="monotone"
-                  dataKey="latency"
-                  stroke="var(--brand-blue)"
-                  strokeWidth={3}
-                  dot={{ r: 3, fill: 'var(--brand-blue)', stroke: 'var(--ink)', strokeWidth: 2 }}
-                  activeDot={{ r: 4 }}
-                />
-              </LineChart>
-            </ResponsiveContainer>
+        <Group title="Live Kibana" description="The real observability dashboard.">
+          <div className="flex flex-1 flex-col gap-4">
+            <p className="flex items-start gap-2 text-body text-ink">
+              <Activity className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" strokeWidth={2.5} />
+              Kibana reads the same OpenTelemetry logs and traces that FRACTAL writes. The mock charts are gone; this link
+              opens the live stack.
+            </p>
+
+            {live?.provider_account && (
+              <div className="rounded border-2 border-line bg-surface-alt p-3">
+                <p className="meta-label">Merchant webhook</p>
+                <div className="mt-1 flex flex-wrap items-center gap-2">
+                  <StatusPill
+                    size="sm"
+                    meta={{
+                      label: sentenceCase(live.provider_account.webhook_status),
+                      tone:
+                        live.provider_account.webhook_status === 'REGISTERED'
+                          ? 'success'
+                          : live.provider_account.webhook_status === 'FAILED'
+                            ? 'danger'
+                            : 'warning',
+                    }}
+                  />
+                  <span className="font-mono text-[11px] text-muted">
+                    {live.provider_account.webhook_id ?? 'No webhook ID'}
+                  </span>
+                </div>
+              </div>
+            )}
+
+            <Button
+              variant="secondary"
+              className="w-full"
+              onClick={() =>
+                window.open(live?.kibana_url ?? 'http://localhost:5601', '_blank', 'noopener,noreferrer')
+              }
+              icon={<ExternalLink className="h-4 w-4" aria-hidden="true" strokeWidth={2.5} />}
+            >
+              Open live Kibana
+            </Button>
+
+            <p className="mt-auto text-[11px] leading-5 text-muted">
+              {live?.generated_at
+                ? `Telemetry snapshot ${formatAbsolute(live.generated_at)}.`
+                : 'Waiting for the first telemetry snapshot.'}
+            </p>
           </div>
         </Group>
       </div>
-
-      <Group
-        title="Concurrent replay success rate"
-        description="Five runs of 50 simultaneous webhook replays"
-      >
-        <div className="h-64">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={MOCK_REPLAY_DATA} margin={{ top: 8, right: 8, left: -18, bottom: 0 }}>
-              <CartesianGrid stroke="var(--border-color)" strokeDasharray="3 3" vertical={false} />
-              <XAxis dataKey="name" tick={{ fontSize: 11 }} tickLine={false} axisLine={false} />
-              <YAxis tick={{ fontSize: 11 }} tickLine={false} axisLine={false} />
-              <ChartTooltip />
-              <Bar dataKey="success" name="Executed" fill="var(--success)" stroke="var(--ink)" strokeWidth={2} />
-              <Bar dataKey="failed" name="Blocked" fill="var(--danger)" stroke="var(--ink)" strokeWidth={2} />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-        <div className="mt-3 flex items-center gap-4 text-[12px] font-bold text-ink">
-          <span className="flex items-center gap-1.5">
-            <span className="h-2.5 w-2.5 border-2 border-line bg-success" aria-hidden="true" />
-            Executed
-          </span>
-          <span className="flex items-center gap-1.5">
-            <span className="h-2.5 w-2.5 border-2 border-line bg-danger" aria-hidden="true" />
-            Blocked
-          </span>
-        </div>
-      </Group>
 
       <section className="panel flex flex-col gap-4 border-[color:var(--danger)] p-5 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
