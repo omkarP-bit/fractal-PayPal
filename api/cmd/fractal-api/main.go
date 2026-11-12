@@ -98,15 +98,22 @@ func (p *webhookProcessor) Process(ctx context.Context, ev webhook.EventRow) err
 	}
 
 	// Find matching cases for this payment and mark them for re-investigation.
+	// A case opened before the payment was known is linked here, so a late
+	// webhook still reaches the case and the incident grouping.
 	rows, err := p.db.Query(ctx, `
 		UPDATE exception_cases
-		SET status = 'COLLECTING_EVIDENCE', version = version + 1, updated_at = now()
-		WHERE payment_transaction_id = (
-			SELECT id FROM payment_transactions
-			WHERE provider = 'PAYPAL' AND provider_order_id = $1
-		)
-		AND status NOT IN ('RESOLVED', 'REJECTED', 'CLOSED')
-		RETURNING id::text`,
+		SET payment_transaction_id = COALESCE(payment_transaction_id, pt.id),
+		    status = 'COLLECTING_EVIDENCE', version = version + 1, updated_at = now()
+		FROM payment_transactions pt
+		WHERE pt.provider = 'PAYPAL' AND pt.provider_order_id = $1
+		  AND exception_cases.merchant_id = pt.merchant_id
+		  AND (
+			exception_cases.payment_transaction_id = pt.id
+			OR (exception_cases.payment_transaction_id IS NULL
+			    AND exception_cases.merchant_order_ref = pt.merchant_order_ref)
+		  )
+		  AND exception_cases.status NOT IN ('RESOLVED', 'REJECTED', 'CLOSED')
+		RETURNING exception_cases.id::text`,
 		tx.ProviderOrderID,
 	)
 	if err != nil {
@@ -128,6 +135,16 @@ func (p *webhookProcessor) Process(ctx context.Context, ev webhook.EventRow) err
 	if p.web != nil {
 		for _, caseID := range affected {
 			go p.web.ReinvestigateCase(context.WithoutCancel(ctx), caseID)
+		}
+		// A provider-side fix changes the verified facts, so the incident
+		// grouping is re-checked for the merchant.
+		if p.web.Assistant != nil && len(affected) > 0 {
+			go func() {
+				groupCtx := context.WithoutCancel(ctx)
+				if err := p.web.Assistant.RegroupMerchant(groupCtx, merchantID); err != nil {
+					p.log.Warn("incident regroup failed", "merchant_id", merchantID, "err", err)
+				}
+			}()
 		}
 	}
 
@@ -301,6 +318,23 @@ func main() {
 	mux.Handle("POST /api/v1/cases/{id}/messages", middleware(auth.RequireAuth(http.HandlerFunc(web.PostMessage))))
 	mux.Handle("POST /api/v1/cases/{id}/actions", middleware(auth.RequireAuth(http.HandlerFunc(web.PostAction))))
 	mux.Handle("POST /api/v1/cases/{id}/approvals/{approvalID}", middleware(auth.RequireAuth(http.HandlerFunc(web.DecideApproval))))
+
+	// AI Case Assistant: incident grouping, triage inbox and drafted replies.
+	mux.Handle("GET /api/v1/assistant/incidents", middleware(auth.RequireAuth(http.HandlerFunc(web.ListIncidents))))
+	mux.Handle("GET /api/v1/assistant/incidents/{id}", middleware(auth.RequireAuth(http.HandlerFunc(web.GetIncident))))
+	mux.Handle("POST /api/v1/assistant/incidents/{id}/drafts", middleware(auth.RequireAuth(http.HandlerFunc(web.DraftIncident))))
+	mux.Handle("POST /api/v1/assistant/incidents/{id}/drafts/approve", middleware(auth.RequireAuth(http.HandlerFunc(web.ApproveIncidentDrafts))))
+	mux.Handle("POST /api/v1/assistant/incidents/{id}/drafts/send", middleware(auth.RequireAuth(http.HandlerFunc(web.SendIncidentDrafts))))
+	mux.Handle("POST /api/v1/assistant/incidents/{id}/cases/{caseID}", middleware(auth.RequireAuth(http.HandlerFunc(web.AddIncidentCase))))
+	mux.Handle("DELETE /api/v1/assistant/incidents/{id}/cases/{caseID}", middleware(auth.RequireAuth(http.HandlerFunc(web.RemoveIncidentCase))))
+	mux.Handle("POST /api/v1/assistant/incidents/{id}/fanout", middleware(auth.RequireAuth(http.HandlerFunc(web.FanOutIncident))))
+	mux.Handle("POST /api/v1/assistant/regroup", middleware(auth.RequireAuth(http.HandlerFunc(web.RegroupMerchant))))
+	mux.Handle("POST /api/v1/assistant/drafts/{id}", middleware(auth.RequireAuth(http.HandlerFunc(web.UpdateDraft))))
+	mux.Handle("POST /api/v1/assistant/drafts/{id}/approve", middleware(auth.RequireAuth(http.HandlerFunc(web.ApproveDraft))))
+	mux.Handle("POST /api/v1/assistant/drafts/{id}/send", middleware(auth.RequireAuth(http.HandlerFunc(web.SendDraft))))
+	mux.Handle("POST /api/v1/assistant/drafts/{id}/discard", middleware(auth.RequireAuth(http.HandlerFunc(web.DiscardDraft))))
+	mux.Handle("POST /api/v1/cases/{id}/group", middleware(auth.RequireAuth(http.HandlerFunc(web.GroupCase))))
+	mux.Handle("POST /api/v1/cases/{id}/drafts", middleware(auth.RequireAuth(http.HandlerFunc(web.DraftCase))))
 
 	mux.Handle("POST /api/v1/webhooks/paypal/{provider_account_id}", middleware(h))
 	// Per-merchant onboarding registers the shorter public URL. Both paths use

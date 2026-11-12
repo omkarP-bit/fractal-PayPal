@@ -6,6 +6,7 @@ import {
   FlaskConical,
   Inbox,
   Keyboard,
+  Layers,
   LogOut,
   Moon,
   PlugZap,
@@ -35,6 +36,7 @@ const NAV_ITEMS: Record<Role, NavItem[]> = {
     { path: '/customer/cases/new', label: 'Report an issue', icon: FilePlus2 },
   ],
   MERCHANT: [
+    { path: '/merchant/incidents', label: 'Incident inbox', icon: Layers },
     { path: '/merchant/cases', label: 'Cases', icon: Inbox },
     { path: '/merchant/onboarding', label: 'PayPal setup', icon: PlugZap },
     { path: '/demo', label: 'Demo controls', icon: FlaskConical },

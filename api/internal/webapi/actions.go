@@ -18,6 +18,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
+	"fractal/api/internal/auth"
 	"fractal/api/internal/policy"
 	"fractal/api/internal/risk"
 )
@@ -44,6 +45,44 @@ type actionResponse struct {
 	Execution *executionInfo `json:"execution"`
 	Approval  *approvalInfo  `json:"approval"`
 	Case      caseState      `json:"case"`
+}
+
+// actionResult is the transport-neutral outcome of a per-case action. The
+// HTTP handler writes it, and the incident fan-out collects it, so a fan-out
+// runs exactly the same per-case policy path as a single-case action.
+type actionResult struct {
+	status  int
+	payload any
+	problem bool
+	title   string
+	detail  string
+}
+
+func actionOK(status int, payload any) actionResult {
+	return actionResult{status: status, payload: payload}
+}
+
+func actionFail(status int, title, detail string) actionResult {
+	return actionResult{status: status, problem: true, title: title, detail: detail}
+}
+
+// Outcome returns the policy outcome recorded for this action, if any.
+func (r actionResult) Outcome() string {
+	if r.problem {
+		return ""
+	}
+	if resp, ok := r.payload.(actionResponse); ok && resp.Decision != nil {
+		return resp.Decision.Outcome
+	}
+	return ""
+}
+
+func writeActionResult(w http.ResponseWriter, result actionResult) {
+	if result.problem {
+		writeProblem(w, result.status, result.title, result.detail)
+		return
+	}
+	writeJSON(w, result.status, result.payload)
 }
 
 type actionRequest struct {
@@ -153,46 +192,46 @@ func (h *Handlers) PostAction(w http.ResponseWriter, r *http.Request) {
 	action := strings.ToUpper(strings.TrimSpace(req.ActionType))
 	switch action {
 	case "RECONCILE_MERCHANT_ORDER":
-		h.reconcile(w, r, caseID, req)
+		writeActionResult(w, h.reconcileCase(r.Context(), claims, caseID, req))
 	case "REQUEST_REFUND":
-		h.requestRefund(w, r, caseID, req)
+		writeActionResult(w, h.requestRefundCase(r.Context(), claims, caseID, req))
 	default:
 		writeProblem(w, http.StatusBadRequest, "Unsupported action", "That action type is not supported.")
 	}
 }
 
+// reconcile runs a single-case reconciliation and writes the result.
 func (h *Handlers) reconcile(w http.ResponseWriter, r *http.Request, caseID string, req actionRequest) {
-	ctx := r.Context()
-	claims := claimsFrom(r)
+	writeActionResult(w, h.reconcileCase(r.Context(), claimsFrom(r), caseID, req))
+}
+
+// reconcileCase is the per-case reconciliation path. Every linked case in an
+// incident fan-out goes through this function, so PolicyGuard evaluates each
+// case independently and a mismatch in one case never drags the others with it.
+func (h *Handlers) reconcileCase(ctx context.Context, claims *auth.Claims, caseID string, req actionRequest) actionResult {
 	state, err := h.loadActionState(ctx, caseID)
 	if errors.Is(err, pgx.ErrNoRows) {
-		writeProblem(w, http.StatusNotFound, "Case not found", "This case does not exist.")
-		return
+		return actionFail(http.StatusNotFound, "Case not found", "This case does not exist.")
 	}
 	if err != nil {
-		writeProblem(w, http.StatusInternalServerError, "Could not load case", "The case state could not be read.")
-		return
+		return actionFail(http.StatusInternalServerError, "Could not load case", "The case state could not be read.")
 	}
 	if state.Status == "RESOLVED" || state.Status == "CLOSED" {
-		writeProblem(w, http.StatusConflict, "Already resolved", "This case is already closed.")
-		return
+		return actionFail(http.StatusConflict, "Already resolved", "This case is already closed.")
 	}
 	if state.OrderStatus == "PAID" {
-		writeProblem(w, http.StatusConflict, "Order already paid", "The merchant order is already marked paid.")
-		return
+		return actionFail(http.StatusConflict, "Order already paid", "The merchant order is already marked paid.")
 	}
 
 	freshTx, err := h.PayPal.GetTransaction(ctx, state.ProviderOrderID)
 	if err != nil {
-		writeProblem(w, http.StatusServiceUnavailable, "Provider unavailable",
+		return actionFail(http.StatusServiceUnavailable, "Provider unavailable",
 			"PayPal could not be reached for the final freshness check. Nothing was executed.")
-		return
 	}
 	freshOrderStatus, freshOrderAmount, freshOrderCurrency, freshOrderFetchedAt, err := h.fetchMerchantOrder(ctx, state.OrderRef)
 	if err != nil {
-		writeProblem(w, http.StatusServiceUnavailable, "Merchant unavailable",
+		return actionFail(http.StatusServiceUnavailable, "Merchant unavailable",
 			"The merchant order API could not be reached. Nothing was executed.")
-		return
 	}
 
 	params := paramsJSON(freshTx.AmountMinor, freshTx.Currency)
@@ -209,38 +248,33 @@ func (h *Handlers) reconcile(w http.ResponseWriter, r *http.Request, caseID stri
 		var currentVersion int
 		_ = h.DB.QueryRow(ctx, `SELECT status, version FROM exception_cases WHERE id = $1`, caseID).
 			Scan(&currentStatus, &currentVersion)
-		writeJSON(w, http.StatusOK, actionResponse{
+		return actionOK(http.StatusOK, actionResponse{
 			Execution: &executionInfo{ID: execID, Status: execStatus},
 			Case:      caseState{Status: currentStatus, Version: currentVersion},
 		})
-		return
 	case err == nil && execStatus == "IN_PROGRESS":
-		writeProblem(w, http.StatusConflict, "Action in progress",
+		return actionFail(http.StatusConflict, "Action in progress",
 			"This reconciliation is already running. Refresh the case in a moment.")
-		return
 	case err == nil && execStatus == "FAILED":
 		if _, updateErr := h.DB.Exec(ctx, `
 			UPDATE action_executions
 			SET status = 'IN_PROGRESS', error = NULL, completed_at = NULL
 			WHERE id = $1`, execID); updateErr != nil {
 			h.Log.Error("reset execution", "err", updateErr)
-			writeProblem(w, http.StatusInternalServerError, "Execution record failed",
+			return actionFail(http.StatusInternalServerError, "Execution record failed",
 				"The previous attempt could not be retried.")
-			return
 		}
 	case errors.Is(err, pgx.ErrNoRows):
 		execID = ""
 	default:
 		h.Log.Error("lookup execution", "err", err)
-		writeProblem(w, http.StatusInternalServerError, "Could not check execution",
+		return actionFail(http.StatusInternalServerError, "Could not check execution",
 			"The execution state could not be read.")
-		return
 	}
 
 	evalID, err := uuid.NewRandom()
 	if err != nil {
-		writeProblem(w, http.StatusInternalServerError, "Could not build decision", "The evaluation id could not be created.")
-		return
+		return actionFail(http.StatusInternalServerError, "Could not build decision", "The evaluation id could not be created.")
 	}
 	evaluatedAt := time.Now().UTC().Format(time.RFC3339)
 
@@ -320,8 +354,7 @@ func (h *Handlers) reconcile(w http.ResponseWriter, r *http.Request, caseID stri
 		decision.Outcome, string(findingsJSON), policyRevision, claims.Sub).Scan(&decisionID, &decisionAt)
 	if err != nil {
 		h.Log.Error("insert policy decision", "err", err)
-		writeProblem(w, http.StatusInternalServerError, "Policy record failed", "The decision could not be recorded; no action was executed.")
-		return
+		return actionFail(http.StatusInternalServerError, "Policy record failed", "The decision could not be recorded; no action was executed.")
 	}
 
 	decisionOut := &Decision{
@@ -344,8 +377,7 @@ func (h *Handlers) reconcile(w http.ResponseWriter, r *http.Request, caseID stri
 				caseID, decisionID, string(params), paramsSHA, idempotencyKey).Scan(&execID)
 			if err != nil {
 				h.Log.Error("insert execution", "err", err)
-				writeProblem(w, http.StatusInternalServerError, "Execution record failed", "The action could not be recorded; nothing was executed.")
-				return
+				return actionFail(http.StatusInternalServerError, "Execution record failed", "The action could not be recorded; nothing was executed.")
 			}
 		} else {
 			if _, err = h.DB.Exec(ctx, `UPDATE action_executions SET policy_decision_id = $2 WHERE id = $1`, execID, decisionID); err != nil {
@@ -397,12 +429,11 @@ func (h *Handlers) reconcile(w http.ResponseWriter, r *http.Request, caseID stri
 				fmt.Sprintf(`{"action":"RECONCILE_MERCHANT_ORDER","error":%q}`, reason),
 				sha256Hex([]byte("ACTION_FAILED:"+execID)))
 			h.Log.Warn("merchant reconcile failed", "case", caseID, "err", reason)
-			writeJSON(w, http.StatusBadGateway, actionResponse{
+			return actionOK(http.StatusBadGateway, actionResponse{
 				Decision:  decisionOut,
 				Execution: &executionInfo{ID: execID, Status: "FAILED"},
 				Case:      caseState{Status: state.Status, Version: state.Version},
 			})
-			return
 		}
 
 		if !json.Valid(responseBody) {
@@ -418,8 +449,7 @@ func (h *Handlers) reconcile(w http.ResponseWriter, r *http.Request, caseID stri
 			RETURNING version`, caseID).Scan(&newVersion)
 		if err != nil {
 			h.Log.Error("close case", "err", err)
-			writeProblem(w, http.StatusInternalServerError, "Case update failed", "The order was reconciled but the case could not be closed.")
-			return
+			return actionFail(http.StatusInternalServerError, "Case update failed", "The order was reconciled but the case could not be closed.")
 		}
 		_, _ = h.DB.Exec(ctx, `
 			UPDATE action_executions
@@ -445,12 +475,18 @@ func (h *Handlers) reconcile(w http.ResponseWriter, r *http.Request, caseID stri
 			sha256Hex([]byte("CASE_RECONCILED:"+execID)))
 
 		completed := time.Now().UTC()
-		writeJSON(w, http.StatusOK, actionResponse{
+		if h.Assistant != nil {
+			// The cause is fixed for this case; refresh the incident so the
+			// triage inbox shows the new state.
+			if refreshErr := h.Assistant.RefreshCase(context.WithoutCancel(ctx), caseID); refreshErr != nil {
+				h.Log.Warn("incident refresh failed", "case_id", caseID, "err", refreshErr)
+			}
+		}
+		return actionOK(http.StatusOK, actionResponse{
 			Decision:  decisionOut,
 			Execution: &executionInfo{ID: execID, Status: "SUCCEEDED", CompletedAt: &completed},
 			Case:      caseState{Status: "RESOLVED", Version: newVersion},
 		})
-		return
 
 	case "REQUIRE_APPROVAL":
 		_, _ = h.DB.Exec(ctx, `
@@ -470,30 +506,26 @@ func (h *Handlers) reconcile(w http.ResponseWriter, r *http.Request, caseID stri
 			caseID, claims.Sub,
 			fmt.Sprintf(`{"action":"RECONCILE_MERCHANT_ORDER","message":"Reconciliation awaits merchant approval"}`),
 			sha256Hex([]byte("APPROVAL_REQUESTED:"+approvalID)))
-		writeJSON(w, http.StatusOK, actionResponse{
+		return actionOK(http.StatusOK, actionResponse{
 			Decision: decisionOut,
 			Approval: &approvalInfo{ID: approvalID, Decision: "PENDING", ParamsSHA256: paramsSHA},
 			Case:     caseState{Status: "AWAITING_MERCHANT_APPROVAL", Version: state.Version + 1},
 		})
-		return
 
 	case "WAIT":
-		writeJSON(w, http.StatusOK, actionResponse{
+		return actionOK(http.StatusOK, actionResponse{
 			Decision: decisionOut,
 			Case:     caseState{Status: state.Status, Version: state.Version},
 		})
-		return
 
 	case "BLOCK":
-		writeJSON(w, http.StatusOK, actionResponse{
+		return actionOK(http.StatusOK, actionResponse{
 			Decision: decisionOut,
 			Case:     caseState{Status: state.Status, Version: state.Version},
 		})
-		return
 
 	default:
-		writeProblem(w, http.StatusInternalServerError, "Unknown policy outcome", "The policy engine returned an unrecognized decision.")
-		return
+		return actionFail(http.StatusInternalServerError, "Unknown policy outcome", "The policy engine returned an unrecognized decision.")
 	}
 }
 
@@ -510,16 +542,20 @@ func findingsFromPolicy(in []policy.Finding) []Finding {
 	return out
 }
 
+// requestRefund creates a refund approval request. A refund is never drafted
+// as a promise by the assistant; it always goes to PolicyGuard and a merchant
+// admin.
 func (h *Handlers) requestRefund(w http.ResponseWriter, r *http.Request, caseID string, req actionRequest) {
-	claims := claimsFrom(r)
-	state, err := h.loadActionState(r.Context(), caseID)
+	writeActionResult(w, h.requestRefundCase(r.Context(), claimsFrom(r), caseID, req))
+}
+
+func (h *Handlers) requestRefundCase(ctx context.Context, claims *auth.Claims, caseID string, req actionRequest) actionResult {
+	state, err := h.loadActionState(ctx, caseID)
 	if errors.Is(err, pgx.ErrNoRows) {
-		writeProblem(w, http.StatusNotFound, "Case not found", "This case does not exist.")
-		return
+		return actionFail(http.StatusNotFound, "Case not found", "This case does not exist.")
 	}
 	if err != nil {
-		writeProblem(w, http.StatusInternalServerError, "Could not load case", "The case state could not be read.")
-		return
+		return actionFail(http.StatusInternalServerError, "Could not load case", "The case state could not be read.")
 	}
 
 	amount := req.Params.AmountMinor
@@ -538,11 +574,11 @@ func (h *Handlers) requestRefund(w http.ResponseWriter, r *http.Request, caseID 
 		{RuleID: "PP-302", Code: "GATE_PASSED", Message: fmt.Sprintf("Refund of %d %s matches the verified payment", amount, currency), Passed: true},
 	}
 	findingsJSON, _ := json.Marshal(findings)
-	policyRevision := h.policyRevision(r.Context())
+	policyRevision := h.policyRevision(ctx)
 
 	var decisionID string
 	var decisionAt time.Time
-	err = h.DB.QueryRow(r.Context(), `
+	err = h.DB.QueryRow(ctx, `
 		INSERT INTO policy_decisions
 			(case_id, evaluation_id, action_type, params_sha256, input, input_sha256,
 			 outcome, findings, policy_revision, requested_by)
@@ -554,37 +590,35 @@ func (h *Handlers) requestRefund(w http.ResponseWriter, r *http.Request, caseID 
 		sha256Hex(params), string(findingsJSON), policyRevision, claims.Sub).Scan(&decisionID, &decisionAt)
 	if err != nil {
 		h.Log.Error("insert refund decision", "err", err)
-		writeProblem(w, http.StatusInternalServerError, "Policy record failed", "The approval request could not be recorded.")
-		return
+		return actionFail(http.StatusInternalServerError, "Policy record failed", "The approval request could not be recorded.")
 	}
 
 	var approvalID string
-	err = h.DB.QueryRow(r.Context(), `
+	err = h.DB.QueryRow(ctx, `
 		INSERT INTO approvals
 			(case_id, policy_decision_id, action_type, params_sha256, requested_role, decision, expires_at)
 		VALUES ($1, $2, 'REQUEST_REFUND', $3, 'MERCHANT_ADMIN', 'PENDING', now() + interval '24 hours')
 		RETURNING id::text`, caseID, decisionID, paramsSHA).Scan(&approvalID)
 	if err != nil {
 		h.Log.Error("insert approval", "err", err)
-		writeProblem(w, http.StatusInternalServerError, "Approval failed", "The approval request could not be created.")
-		return
+		return actionFail(http.StatusInternalServerError, "Approval failed", "The approval request could not be created.")
 	}
 
 	var newVersion int
-	_ = h.DB.QueryRow(r.Context(), `
+	_ = h.DB.QueryRow(ctx, `
 		UPDATE exception_cases
 		SET status = 'AWAITING_MERCHANT_APPROVAL', version = version + 1
 		WHERE id = $1 AND status NOT IN ('RESOLVED', 'CLOSED')
 		RETURNING version`, caseID).Scan(&newVersion)
 
-	_, _ = h.DB.Exec(r.Context(), `
+	_, _ = h.DB.Exec(ctx, `
 		INSERT INTO audit_events (case_id, actor_type, actor_id, event_type, visibility, data, event_hash)
 		VALUES ($1, 'MERCHANT_USER', $2, 'APPROVAL_REQUESTED', 'MERCHANT', $3, $4)`,
 		caseID, claims.Sub,
 		fmt.Sprintf(`{"action":"REQUEST_REFUND","approval_id":%q,"message":"Refund request created and waiting for approval"}`, approvalID),
 		sha256Hex([]byte("APPROVAL_REQUESTED:"+approvalID)))
 
-	writeJSON(w, http.StatusOK, actionResponse{
+	return actionOK(http.StatusOK, actionResponse{
 		Decision: &Decision{ID: decisionID, ActionType: "REQUEST_REFUND", Outcome: "REQUIRE_APPROVAL", PolicyRevision: policyRevision, Findings: findings, CreatedAt: decisionAt},
 		Approval: &approvalInfo{ID: approvalID, Decision: "PENDING", ParamsSHA256: paramsSHA},
 		Case:     caseState{Status: "AWAITING_MERCHANT_APPROVAL", Version: newVersion},

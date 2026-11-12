@@ -156,8 +156,48 @@ icon source.
 - **Conversation** and **activity** timeline; merchant-only events are labelled and can
   be hidden. Permissions open in a small bordered popover instead of taking a card.
 
-### Customer case list / detail
+### Incident inbox (merchant)
 
+- `/merchant/incidents` replaces the long chat list with one card per grouped
+  cause. A card states the root cause in a sentence, the one-line summary, the
+  open-case count against the total, the amount at stake and the grouping
+  confidence, then the suggested next step.
+- Priority is shown as `P96` next to a severity tag. It is computed from
+  verified facts; the card never claims the assistant decided it.
+- A stat strip (open incidents, cases affected, exposure, drafts to review)
+  uses the same flat blocks as the case list. Exposure is shown in whole
+  currency units because the panel has no room for cents.
+- Filter (everything / incidents / cases) and sort (priority, amount, age) sit
+  below the strip so the strip never scrolls on desktop.
+- Cases that are not part of a group are listed underneath in a plain row
+  layout, so nothing disappears from the inbox.
+- **Regroup** re-runs grouping against the latest verified facts. It is a
+  merchant action, not a background job, so the inbox state is always
+  explainable.
+
+### Incident detail (merchant)
+
+- The header carries the incident number, severity and status. Three flat
+  blocks show the cases affected, the amount in question and the confidence.
+- **Fix cause and reconcile all** states in a helper line that every linked case
+  is proposed separately and PolicyGuard decides each one on its own facts.
+- The draft list shows the wording per customer with its type, status and, when
+  the customer asked for money, a **Merchant decision needed** tag. Drafts can
+  be edited in place; an edit that promises a refund is rejected by the API and
+  the field keeps the last good wording.
+- Approve is per draft, bulk per incident. Send is only enabled for approved
+  drafts, and the result toast states how many customers were notified.
+- Linked cases list every case with its severity, amount, draft status and a
+  control to remove it from the incident. Removal only changes the grouping.
+
+### AI-assisted messages
+
+- A message drafted by the assistant carries an **AI-assisted** badge in both
+  the merchant and the customer conversation, next to who sent it.
+- The assistant never sends an unapproved message, so the badge always sits
+  beside a real human decision.
+
+### Customer case list / detail
 - The same list system in customer language: merchant, payment, order, status. The
   primary **Report an issue** action aligns with the table's right edge.
 - Detail opens with a plain-language headline and a four-step stepper
@@ -232,6 +272,8 @@ icon source.
   their own inset focus ring. Dialogs trap and restore focus.
 - Status uses text plus a square dot, never color alone; risk and decision tags follow
   the same rule. Timelines mark merchant-only entries with a lock and text.
+- The AI-assisted badge is a text tag with an icon, not a colour hint, so the label
+  survives greyscale and high-contrast modes.
 - `aria-live` on search result counts, status changes and the conversation log.
 - Touch targets are at least 44px (nav tabs, icon buttons, primary controls).
 - Reduced motion removes every translate and animation.

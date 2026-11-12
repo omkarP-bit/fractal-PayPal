@@ -35,6 +35,12 @@ merchants := {
     },
     "00000000-0000-0000-0000-0000000000c1": {
         "approval_threshold_minor": 20000
+    },
+    # Managed merchants onboarded through FRACTAL. A reconciliation below the
+    # threshold runs on the per-case policy path without a second approval;
+    # anything above it still needs a merchant admin.
+    "dd360069-ca76-431b-94e5-277c47dcfffc": {
+        "approval_threshold_minor": 20000
     }
 }
 

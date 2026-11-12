@@ -100,16 +100,38 @@ func handleStorefront(w http.ResponseWriter, r *http.Request) {
 // ---------- checkout ----------
 
 func handleCreateOrder(w http.ResponseWriter, r *http.Request) {
-	startCheckout(w, r, r.FormValue("email"))
+	startCheckout(w, r, r.FormValue("email"), defaultAmountMinor, defaultAmountMinor)
 }
 
 // handlePayLink creates a fresh checkout from a shareable link. Each visit
 // creates a new order so the claim code is unique and single-use.
+//
+// The optional amount_minor and paypal_amount_minor parameters exist for the
+// demo: they let a merchant seed one order whose store amount differs from
+// the captured amount, so PolicyGuard blocks that single case while the rest
+// of the incident reconciles.
 func handlePayLink(w http.ResponseWriter, r *http.Request) {
-	startCheckout(w, r, r.URL.Query().Get("email"))
+	startCheckout(w, r, r.URL.Query().Get("email"),
+		amountParam(r, "amount_minor", defaultAmountMinor),
+		amountParam(r, "paypal_amount_minor", defaultAmountMinor))
 }
 
-func startCheckout(w http.ResponseWriter, r *http.Request, email string) {
+const defaultAmountMinor = 4900
+
+// amountParam reads a positive minor-unit amount from the query string.
+func amountParam(r *http.Request, name string, fallback int64) int64 {
+	raw := strings.TrimSpace(r.URL.Query().Get(name))
+	if raw == "" {
+		return fallback
+	}
+	value, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || value <= 0 {
+		return fallback
+	}
+	return value
+}
+
+func startCheckout(w http.ResponseWriter, r *http.Request, email string, amountMinor int64, paypalAmountMinor int64) {
 	email = strings.TrimSpace(email)
 	if email == "" {
 		email = "buyer@example.com"
@@ -117,7 +139,7 @@ func startCheckout(w http.ResponseWriter, r *http.Request, email string) {
 
 	orderID := "ORDER-" + randHex(8)
 	claimToken := randHex(16)
-	_, err := store.Create(orderID, 4900, "USD", claimToken)
+	_, err := store.Create(orderID, amountMinor, "USD", claimToken)
 	if err != nil {
 		slog.Error("create order", "err", err)
 		http.Error(w, `{"error":"checkout failed"}`, http.StatusInternalServerError)
@@ -132,7 +154,7 @@ func startCheckout(w http.ResponseWriter, r *http.Request, email string) {
 	returnURL := publicBase + "/api/capture/" + orderID
 	cancelURL := publicBase + "/?cancelled=1"
 
-	providerOrderID, approveURL, err := paypal.CreateOrder(4900, "USD", orderID, returnURL, cancelURL)
+	providerOrderID, approveURL, err := paypal.CreateOrder(paypalAmountMinor, "USD", orderID, returnURL, cancelURL)
 	if err != nil {
 		slog.Error("paypal create order", "err", err)
 		http.Error(w, `{"error":"checkout failed"}`, http.StatusBadGateway)
@@ -142,14 +164,14 @@ func startCheckout(w http.ResponseWriter, r *http.Request, email string) {
 		slog.Error("store provider order id", "order", orderID, "err", err)
 	}
 
-	if err := registerClaimToken(orderID, claimToken, email); err != nil {
+	if err := registerClaimToken(orderID, claimToken, email, amountMinor); err != nil {
 		slog.Error("register claim token", "order", orderID, "err", err)
 	}
 
 	http.Redirect(w, r, approveURL, http.StatusFound)
 }
 
-func registerClaimToken(orderRef, claimToken, email string) error {
+func registerClaimToken(orderRef, claimToken, email string, amountMinor int64) error {
 	if merchantID == "" {
 		return fmt.Errorf("MERCHANT_ID is not set")
 	}
@@ -161,7 +183,7 @@ func registerClaimToken(orderRef, claimToken, email string) error {
 		"merchant_order_ref": orderRef,
 		"customer_email":     email,
 		"token":              claimToken,
-		"amount_minor":       4900,
+		"amount_minor":       amountMinor,
 		"currency":           "USD",
 	})
 	if err != nil {

@@ -34,6 +34,11 @@ const STATUS_MAP: Record<string, StatusMeta> = {
   REFUNDED: { label: 'Refunded', tone: 'neutral' },
   CANCELLED: { label: 'Cancelled', tone: 'neutral' },
   UNKNOWN: { label: 'Unknown', tone: 'neutral' },
+
+  // Assistant drafts
+  DRAFTED: { label: 'Drafted', tone: 'warning' },
+  APPROVED: { label: 'Approved', tone: 'info' },
+  DISCARDED: { label: 'Discarded', tone: 'neutral' },
 };
 
 const CASE_TYPE_MAP: Record<string, string> = {
@@ -88,6 +93,10 @@ const EVENT_MAP: Record<string, string> = {
   APPROVAL_DECIDED: 'Approval decided',
   CASE_RESOLVED: 'Case resolved',
   CASE_CLOSED: 'Case closed',
+  AI_MESSAGE_SENT: 'AI-assisted message sent',
+  INCIDENT_GROUPED: 'Grouped into an incident',
+  DRAFT_CREATED: 'Reply drafted',
+  DRAFT_APPROVED: 'Reply approved',
 };
 
 const DECISION_MAP: Record<string, StatusMeta> = {
@@ -102,6 +111,12 @@ const RISK_MAP: Record<string, StatusMeta> = {
   MEDIUM: { label: 'Medium risk', tone: 'warning' },
   HIGH: { label: 'High risk', tone: 'danger' },
   CRITICAL: { label: 'Critical risk', tone: 'danger' },
+};
+
+const DRAFT_TYPE_MAP: Record<string, string> = {
+  STATUS_UPDATE: 'Status update',
+  INFORMATION_REQUEST: 'Information request',
+  RESOLUTION_NOTICE: 'Resolution notice',
 };
 
 /**
@@ -165,8 +180,13 @@ export function formatRisk(severity: string | null | undefined): StatusMeta {
   return RISK_MAP[severity.toUpperCase()] ?? { label: `${sentenceCase(severity)} risk`, tone: 'neutral' };
 }
 
-export function formatValidation(status: string | null | undefined): StatusMeta {
-  switch ((status ?? '').toUpperCase()) {
+/** Human label for an assistant draft type. */
+export function formatDraftType(draftType: string | null | undefined): string {
+  if (!draftType) return 'Reply';
+  return DRAFT_TYPE_MAP[draftType.toUpperCase()] ?? sentenceCase(draftType);
+}
+
+export function formatValidation(status: string | null | undefined): StatusMeta {  switch ((status ?? '').toUpperCase()) {
     case 'REFS_VERIFIED':
       return { label: 'Verified', tone: 'success' };
     case 'SCHEMA_VALID':

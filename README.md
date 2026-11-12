@@ -251,6 +251,85 @@ make demo   # scripted happy path plus negative scenarios
 
 ---
 
+## AI Case Assistant
+
+When one merchant has many customers reporting the same exception, FRACTAL groups
+the cases into an **incident**, ranks what needs attention, and drafts the
+customer replies. PolicyGuard and the merchant keep control of every action.
+
+| Capability | What it does | Where |
+|---|---|---|
+| Incident grouping | Clusters cases that share verified facts (same provider account, same root cause, same failing webhook signal) inside a time window | `api/internal/assistant` |
+| Triage inbox | Ranks incidents and cases by severity, amount, age and incident size, each with a one-line summary | `/merchant/incidents` |
+| Drafted replies | Renders a reply per customer from verified case facts, for the merchant to edit, approve and send in bulk | `/merchant/incidents/{id}` |
+
+### How grouping is verified
+
+The assistant proposes the grouping; the Go backend checks it.
+
+1. **Fingerprint** — a SHA-256 over merchant, provider account, root-cause code
+   and failing webhook signal. Amounts and customer identity are excluded, so
+   one incident can span many customers.
+2. **Verified facts** — a case joins an incident only when the backend confirms
+   the shared discrepancy from the database: the provider confirms the payment
+   and the merchant order was never updated. A case that fails the check stays
+   a standalone case in the inbox.
+3. **Threshold** — `FRACTAL_INCIDENT_MIN_CASES` (default `2`) is how many cases
+   must share a cause before it counts as a group. `FRACTAL_INCIDENT_WINDOW`
+   (default `6h`) is how far apart two cases may be opened and still belong
+   together.
+4. **Corrections** — the merchant can add or remove a case from an incident.
+   Removing a case only changes the grouping; it never changes that case's own
+   policy path.
+
+### How the priority is set
+
+Priority is computed from verified facts only: severity from the risk engine,
+payment amount, customer wait time and incident size. The AI writes the
+summary; it never sets the priority.
+
+### Drafted replies and the guardrails
+
+- Drafts use a template filled with verified case data (order reference,
+  captured amount, provider and order state). Nothing else.
+- **No promises.** Drafts and merchant edits are scanned for promises about
+  refunds, compensation or timelines and rejected with a `422`.
+- **Money requests are never answered with a promise.** When a customer asks
+  for money back, the draft is flagged `CUSTOMER_REQUESTED_MONEY` and routed to
+  the merchant and PolicyGuard.
+- **Customer messages are untrusted input.** Their content is classified, never
+  executed and never copied into a draft.
+- **AI-assisted labels.** Every sent message is stored with `ai_generated`,
+  shows an "AI-assisted" badge to the customer, and is written to the audit
+  timeline as `AI_MESSAGE_SENT`.
+- **The assistant has no provider credentials** and cannot trigger actions.
+
+### Fan-out keeps per-case policy checks
+
+"Fix cause and reconcile all" proposes one action per linked case, and each
+case goes through the same per-case path as a single-case action. PolicyGuard
+evaluates every case on its own facts, so an amount mismatch blocks exactly one
+case while the rest reconcile:
+
+```text
+INC-5073  WEBHOOK_ORDER_UPDATE_MISSING  5 cases
+  FR-10005  ALLOW
+  FR-10111  ALLOW
+  FR-10112  ALLOW
+  FR-10113  ALLOW
+  FR-10127  BLOCK  (AMOUNT_MISMATCH, SEVERITY_CRITICAL)
+```
+
+### Configuration
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `FRACTAL_INCIDENT_MIN_CASES` | `2` | Cases that must share a cause before it becomes an incident |
+| `FRACTAL_INCIDENT_WINDOW` | `6h` | Time window used for grouping |
+| `FRACTAL_ASSISTANT_AUTOSEND` | `false` | Allow low-risk status updates to send without a merchant approval |
+
+---
+
 ## Roles and visibility
 
 | Item | Customer | Merchant staff | Merchant admin | Platform admin |
@@ -417,7 +496,7 @@ See the model card: [`investigator/app/anomaly/README.md`](investigator/app/anom
 
 ```text
 fractal/
-  api/                Go modular monolith (cases, auth, provider, webhook, evidence, risk, policy, executor, audit)
+  api/                Go modular monolith (cases, auth, provider, webhook, evidence, risk, policy, executor, audit, assistant)
   investigator/       Python LangGraph service
   merchant-store/     Mock merchant with breakable webhook handler
   policies/           Rego modules, data, tests
@@ -449,6 +528,22 @@ make reset         # wipe local data
 | Policy | Positive and negative fixtures, advisory isolation, registry lint |
 | Go | Authorization, projections, state machine, signature verification, idempotency |
 | Integration | Dedup, advisory locks, append-only triggers, audit chain on a real PostgreSQL |
+
+### Case assistant tests
+
+`api/internal/assistant` has two test layers:
+
+- **Pure tests** — fingerprinting, the verified-fact gate, priority ordering,
+  the promise and money-request guardrails, and the draft templates.
+- **Database tests** — grouping thresholds, merchant isolation of incidents and
+  drafts, and the full draft lifecycle (draft → approve → send → audit entry).
+  They create their own merchant and cases and clean up after themselves; they
+  are skipped when `DATABASE_URL` is not set.
+
+```bash
+cd api && DATABASE_URL=postgres://fractal:fractal_dev_password@localhost:5433/fractal?sslmode=disable \
+  go test ./internal/assistant/...
+```
 | Concurrency | 50 webhook replays and 20 parallel action requests produce one execution |
 | Agent | Seeded scenarios, fabricated-evidence rejection, prompt-injection attempts |
 | End to end | Happy path plus the negative scenario suite |

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Loader2, Paperclip, Send } from 'lucide-react';
+import { Bot, Loader2, Paperclip, Send } from 'lucide-react';
 import { cn } from '../lib/cn';
 import { formatTime } from '../lib/format';
 import { Button } from './ui/Button';
@@ -11,6 +11,8 @@ export interface ConversationMessage {
   visibility?: string;
   body: string;
   created_at: string;
+  /** True when the assistant drafted the message. It is labeled to the customer. */
+  ai_generated?: boolean;
 }
 
 interface ConversationProps {
@@ -26,6 +28,16 @@ function authorKind(authorType: string): 'customer' | 'merchant' | 'system' {
   if (value === 'CUSTOMER') return 'customer';
   if (value === 'MERCHANT_USER' || value === 'MERCHANT') return 'merchant';
   return 'system';
+}
+
+/** An AI-drafted message is labeled for the customer, whoever is reading it. */
+function AiBadge() {
+  return (
+    <span className="inline-flex items-center gap-1 rounded-pill border-2 border-line bg-info px-1.5 py-0.5 text-[10px] font-extrabold uppercase tracking-[0.06em] text-[color:var(--info-ink)]">
+      <Bot className="h-3 w-3" aria-hidden="true" strokeWidth={3} />
+      AI-assisted
+    </span>
+  );
 }
 
 export function Conversation({
@@ -101,8 +113,9 @@ export function Conversation({
         {allMessages.map((message) => {
           const kind = authorKind(message.author_type);
           const mine = kind === perspective;
+          const aiAssisted = message.ai_generated === true;
 
-          if (kind === 'system') {
+          if (kind === 'system' && !aiAssisted) {
             return (
               <p
                 key={message.id}
@@ -131,9 +144,16 @@ export function Conversation({
               >
                 {message.body}
               </div>
-              <p className="font-mono text-[11px] leading-4 text-muted">
-                {mine ? 'You' : kind === 'merchant' ? 'Merchant' : 'Customer'}
-                <span aria-hidden="true"> · </span>
+              <p className="flex flex-wrap items-center gap-1.5 font-mono text-[11px] leading-4 text-muted">
+                {aiAssisted ? (
+                  <>
+                    <AiBadge />
+                    <span>Sent by {kind === 'merchant' ? 'the merchant' : 'FRACTAL'}</span>
+                  </>
+                ) : (
+                  <span>{mine ? 'You' : kind === 'merchant' ? 'Merchant' : 'Customer'}</span>
+                )}
+                <span aria-hidden="true">·</span>
                 <time dateTime={message.created_at}>{formatTime(message.created_at)}</time>
               </p>
             </div>

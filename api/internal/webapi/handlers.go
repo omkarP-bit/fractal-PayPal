@@ -14,6 +14,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"fractal/api/internal/assistant"
 	"fractal/api/internal/auth"
 	"fractal/api/internal/evidence"
 	"fractal/api/internal/investigator"
@@ -34,6 +35,11 @@ type Handlers struct {
 	Investigator              *investigator.Client
 	AnomalyEnabled            bool
 	MerchantIntegrationSecret string
+
+	// Assistant is the AI Case Assistant: incident grouping, the triage
+	// inbox and drafted replies. It has no provider credentials and cannot
+	// execute actions.
+	Assistant *assistant.Service
 
 	// Onboarding: Secrets seals provider credentials, PublicBaseURL is the
 	// externally reachable app origin (Render or a tunnel), and KibanaURL is the
@@ -63,6 +69,7 @@ func New(db *pgxpool.Pool, log *slog.Logger, policyClient *policy.Client, paypal
 		Investigator:              investigator.New(os.Getenv("INVESTIGATOR_URL"), os.Getenv("INVESTIGATOR_TOKEN")),
 		AnomalyEnabled:            anomalyEnabled,
 		MerchantIntegrationSecret: os.Getenv("MERCHANT_INTEGRATION_SECRET"),
+		Assistant:                 assistant.New(db, log, assistant.ConfigFromEnv()),
 	}
 	// Resolve merchant credentials lazily: Secrets and PublicBaseURL are set by
 	// main after construction, and the AI layer only ever sees evidence.
@@ -119,7 +126,7 @@ func CORS(next http.Handler) http.Handler {
 			w.Header().Set("Vary", "Origin")
 			w.Header().Set("Access-Control-Allow-Credentials", "true")
 			w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type, Idempotency-Key")
-			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
 		}
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)

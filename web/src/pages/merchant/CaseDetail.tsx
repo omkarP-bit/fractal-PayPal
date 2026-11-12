@@ -5,9 +5,11 @@ import {
   Check,
   Hash,
   History,
+  Layers,
   Link2,
   MoreHorizontal,
   RefreshCw,
+  Send,
   ShieldCheck,
   Sparkles,
   X,
@@ -123,6 +125,8 @@ export function MerchantCaseDetail() {
   const [reconcileError, setReconcileError] = useState<string | null>(null);
   const [showMerchantOnly, setShowMerchantOnly] = useState(true);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [drafting, setDrafting] = useState(false);
+  const [draftBusy, setDraftBusy] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
   const fetchCase = useCallback(
@@ -228,6 +232,50 @@ export function MerchantCaseDetail() {
     if (!id) return;
     await apiClient.createCaseMessage(id, body, 'SHARED');
     await fetchCase(true);
+  };
+
+  const draftReply = async () => {
+    if (!id) return;
+    setDrafting(true);
+    try {
+      await apiClient.draftCaseReply(id);
+      await fetchCase(true);
+      toast.success('Reply drafted', {
+        description: 'Review the wording before it reaches the customer.',
+      });
+    } catch (err) {
+      toast.error(apiErrorMessage(err, 'We couldn’t draft a reply.'));
+    } finally {
+      setDrafting(false);
+    }
+  };
+
+  const approveDraft = async (draftId: string) => {
+    setDraftBusy(`approve-${draftId}`);
+    try {
+      await apiClient.approveDraft(draftId);
+      await fetchCase(true);
+      toast.success('Reply approved');
+    } catch (err) {
+      toast.error(apiErrorMessage(err, 'We couldn’t approve that reply.'));
+    } finally {
+      setDraftBusy(null);
+    }
+  };
+
+  const sendDraft = async (draftId: string) => {
+    setDraftBusy(`send-${draftId}`);
+    try {
+      await apiClient.sendDraft(draftId);
+      await fetchCase(true);
+      toast.success('Reply sent', {
+        description: 'The customer was notified and the send is on the audit timeline.',
+      });
+    } catch (err) {
+      toast.error(apiErrorMessage(err, 'We couldn’t send that reply.'));
+    } finally {
+      setDraftBusy(null);
+    }
   };
 
   if (loading) {
@@ -740,6 +788,115 @@ export function MerchantCaseDetail() {
                 </div>
               )}
             </div>
+          </section>
+
+          {/* Incident */}
+          {caseData.incident && (
+            <section className={cn(PANEL, 'border-l-[6px] border-l-info p-5')}>
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Layers className="h-4 w-4 text-ink" aria-hidden="true" strokeWidth={2.5} />
+                    <h2 className="text-body font-bold text-ink">Grouped with other cases</h2>
+                    <StatusPill meta={formatRisk(caseData.incident.severity)} size="sm" />
+                  </div>
+                  <p className="mt-2 text-body text-ink">{caseData.incident.summary}</p>
+                  <p className="mt-1 text-[12px] text-muted">
+                    <span className="font-mono">{caseData.incident.number}</span>
+                    {' · '}
+                    {caseData.incident.open_case_count} of {caseData.incident.case_count} cases still open
+                  </p>
+                </div>
+                <Link
+                  to={`/merchant/incidents/${caseData.incident.id}`}
+                  className="btn btn-lift inline-flex h-9 items-center justify-center gap-2 rounded bg-yellow px-3 text-meta font-extrabold text-[color:var(--text-on-yellow)] hover:bg-yellow-hover"
+                >
+                  Open incident
+                </Link>
+              </div>
+              <p className="mt-3 flex items-start gap-2 text-[12px] text-muted">
+                <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" strokeWidth={2.5} />
+                <span>{caseData.incident.next_step}</span>
+              </p>
+            </section>
+          )}
+
+          {/* Drafted replies */}
+          <section className={cn(PANEL, 'p-5')}>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <Sparkles className="h-4 w-4 text-ink" aria-hidden="true" strokeWidth={2.5} />
+                <h2 className="text-body font-bold text-ink">Drafted reply</h2>
+              </div>
+              {(caseData.drafts ?? []).length === 0 ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  isLoading={drafting}
+                  loadingText="Drafting…"
+                  onClick={() => void draftReply()}
+                  icon={<Sparkles className="h-4 w-4" aria-hidden="true" strokeWidth={2.5} />}
+                >
+                  Draft a reply
+                </Button>
+              ) : null}
+            </div>
+            {(caseData.drafts ?? []).length === 0 ? (
+              <p className="mt-2 text-[12px] text-muted">
+                The assistant writes replies from the verified facts on this case. Nothing reaches the customer
+                until you approve it.
+              </p>
+            ) : null}
+            <ul className="mt-3 space-y-3">
+              {(caseData.drafts ?? []).map((draft) => (
+                <li key={draft.id} className="rounded border-2 border-line bg-surface-alt p-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <StatusPill
+                      meta={{ label: draft.status.toLowerCase(), tone: 'neutral' }}
+                      size="sm"
+                    />
+                    {draft.guardrail_flag ? (
+                      <StatusPill meta={{ label: 'Merchant decision needed', tone: 'warning' }} size="sm" />
+                    ) : null}
+                    <div className="ml-auto flex items-center gap-2">
+                      {draft.status === 'DRAFTED' ? (
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          isLoading={draftBusy === `approve-${draft.id}`}
+                          loadingText="Approving…"
+                          onClick={() => void approveDraft(draft.id)}
+                          icon={<Check className="h-4 w-4" aria-hidden="true" strokeWidth={2.5} />}
+                        >
+                          Approve
+                        </Button>
+                      ) : null}
+                      {draft.status === 'APPROVED' ? (
+                        <Button
+                          variant="primary"
+                          size="sm"
+                          isLoading={draftBusy === `send-${draft.id}`}
+                          loadingText="Sending…"
+                          onClick={() => void sendDraft(draft.id)}
+                          icon={<Send className="h-4 w-4" aria-hidden="true" strokeWidth={2.5} />}
+                        >
+                          Send
+                        </Button>
+                      ) : null}
+                    </div>
+                  </div>
+                  <p className="mt-2 whitespace-pre-wrap text-body text-ink">{draft.body}</p>
+                  {draft.incident_id ? (
+                    <Link
+                      to={`/merchant/incidents/${draft.incident_id}`}
+                      className="mt-2 inline-block text-[12px] font-bold text-blue underline underline-offset-4"
+                    >
+                      Review in the incident inbox
+                    </Link>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
           </section>
 
           {/* Conversation */}

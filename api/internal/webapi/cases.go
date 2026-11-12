@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 
+	"fractal/api/internal/assistant"
 	"fractal/api/internal/auth"
 )
 
@@ -107,6 +108,11 @@ type Message struct {
 	Visibility string    `json:"visibility"`
 	Body       string    `json:"body"`
 	CreatedAt  time.Time `json:"created_at"`
+	// AIGenerated marks a message the assistant drafted. It is labeled to
+	// the customer and recorded on the audit timeline.
+	AIGenerated bool       `json:"ai_generated"`
+	ApprovedBy  string     `json:"approved_by,omitempty"`
+	SentAt      *time.Time `json:"sent_at,omitempty"`
 }
 
 type Approval struct {
@@ -132,6 +138,24 @@ type Detail struct {
 	Messages         []Message      `json:"messages"`
 	AvailableActions []string       `json:"available_actions"`
 	PendingApprovals []Approval     `json:"pending_approvals"`
+	// Incident links the case to a grouped root cause. Merchant only.
+	Incident *IncidentLink `json:"incident,omitempty"`
+	// Drafts are the merchant-reviewable replies for this case. Merchant only.
+	Drafts []assistant.Draft `json:"drafts,omitempty"`
+}
+
+// IncidentLink is the case's membership in an incident.
+type IncidentLink struct {
+	ID            string `json:"id"`
+	Number        string `json:"number"`
+	Status        string `json:"status"`
+	Severity      string `json:"severity"`
+	PriorityScore int    `json:"priority_score"`
+	CaseCount     int    `json:"case_count"`
+	OpenCaseCount int    `json:"open_case_count"`
+	RootCause     string `json:"root_cause"`
+	Summary       string `json:"summary"`
+	NextStep      string `json:"next_step"`
 }
 
 const summaryColumns = `
@@ -478,7 +502,8 @@ func (h *Handlers) buildDetail(ctx context.Context, caseID string, claims *auth.
 		messageVisibility = append(messageVisibility, "MERCHANT_ONLY")
 	}
 	messageRows, err := h.DB.Query(ctx, `
-		SELECT id::text, author_type, visibility, body, created_at
+		SELECT id::text, author_type, visibility, body, created_at,
+		       ai_generated, COALESCE(approved_by::text, ''), sent_at
 		FROM case_messages WHERE case_id = $1 AND visibility = ANY($2)
 		ORDER BY created_at ASC`, caseID, messageVisibility)
 	if err != nil {
@@ -486,13 +511,41 @@ func (h *Handlers) buildDetail(ctx context.Context, caseID string, claims *auth.
 	}
 	for messageRows.Next() {
 		var item Message
-		if err := messageRows.Scan(&item.ID, &item.AuthorType, &item.Visibility, &item.Body, &item.CreatedAt); err != nil {
+		if err := messageRows.Scan(&item.ID, &item.AuthorType, &item.Visibility, &item.Body, &item.CreatedAt,
+			&item.AIGenerated, &item.ApprovedBy, &item.SentAt); err != nil {
 			messageRows.Close()
 			return nil, false, err
 		}
 		detail.Messages = append(detail.Messages, item)
 	}
 	messageRows.Close()
+
+	// Incident link and drafts (merchant only). Drafts never reach customers;
+	// only the sent message does.
+	if isMerchant(claims) && h.Assistant != nil {
+		merchantID, _, _, _ := h.partyFor(ctx, caseID, claims)
+		if merchantID != "" {
+			incident, incidentErr := h.Assistant.IncidentForCase(ctx, merchantID, caseID)
+			if incidentErr == nil && incident != nil {
+				detail.Incident = &IncidentLink{
+					ID:            incident.ID,
+					Number:        incident.Number,
+					Status:        incident.Status,
+					Severity:      incident.Severity,
+					PriorityScore: incident.PriorityScore,
+					CaseCount:     incident.CaseCount,
+					OpenCaseCount: incident.OpenCaseCount,
+					RootCause:     incident.RootCauseCode,
+					Summary:       incident.AISummary,
+					NextStep:      incident.NextStep,
+				}
+			}
+			drafts, draftErr := h.Assistant.ListDrafts(ctx, merchantID, "", caseID)
+			if draftErr == nil {
+				detail.Drafts = drafts
+			}
+		}
+	}
 
 	// Pending approvals.
 	approvalRows, err := h.DB.Query(ctx, `
@@ -597,7 +650,8 @@ func (h *Handlers) Messages(w http.ResponseWriter, r *http.Request) {
 		visibility = append(visibility, "MERCHANT_ONLY")
 	}
 	rows, err := h.DB.Query(r.Context(), `
-		SELECT id::text, author_type, visibility, body, created_at
+		SELECT id::text, author_type, visibility, body, created_at,
+		       ai_generated, COALESCE(approved_by::text, ''), sent_at
 		FROM case_messages WHERE case_id = $1 AND visibility = ANY($2)
 		ORDER BY created_at ASC`, caseID, visibility)
 	if err != nil {
@@ -608,7 +662,8 @@ func (h *Handlers) Messages(w http.ResponseWriter, r *http.Request) {
 	out := make([]Message, 0)
 	for rows.Next() {
 		var item Message
-		if err := rows.Scan(&item.ID, &item.AuthorType, &item.Visibility, &item.Body, &item.CreatedAt); err != nil {
+		if err := rows.Scan(&item.ID, &item.AuthorType, &item.Visibility, &item.Body, &item.CreatedAt,
+			&item.AIGenerated, &item.ApprovedBy, &item.SentAt); err != nil {
 			writeProblem(w, http.StatusInternalServerError, "Could not load messages", "A message row could not be read.")
 			return
 		}
@@ -863,6 +918,14 @@ func (h *Handlers) CreateCase(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	h.runInvestigation(r.Context(), caseID, caseType, description)
+
+	// Group the new case into an incident so the merchant inbox reflects the
+	// shared cause right away. Grouping never blocks case creation.
+	if h.Assistant != nil {
+		if _, groupErr := h.Assistant.GroupCase(context.WithoutCancel(r.Context()), caseID); groupErr != nil {
+			h.Log.Warn("incident grouping failed", "case_id", caseID, "err", groupErr)
+		}
+	}
 
 	detail, _, err := h.buildDetail(r.Context(), caseID, &auth.Claims{Sub: customerID, Kind: "CUSTOMER"})
 	if err != nil {

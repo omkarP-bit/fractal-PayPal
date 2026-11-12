@@ -97,6 +97,10 @@ export interface MessageItem {
   visibility: string;
   body: string;
   created_at: string;
+  /** True when the assistant drafted the message. It is labeled to the customer. */
+  ai_generated?: boolean;
+  approved_by?: string;
+  sent_at?: string | null;
 }
 
 export interface Approval {
@@ -134,6 +138,131 @@ export interface CaseDetail extends CaseSummary {
   pending_approvals: Approval[];
   available_actions: string[];
   anomaly?: Anomaly | null;
+  /** Incident this case is grouped into. Merchant only. */
+  incident?: IncidentLink | null;
+  /** Merchant-reviewable replies for this case. Merchant only. */
+  drafts?: MessageDraft[];
+}
+
+/** The incident a case is grouped into. */
+export interface IncidentLink {
+  id: string;
+  number: string;
+  status: string;
+  severity: string;
+  priority_score: number;
+  case_count: number;
+  open_case_count: number;
+  root_cause: string;
+  summary: string;
+  next_step: string;
+}
+
+/** A case inside an incident, with its triage facts. */
+export interface IncidentCase {
+  case_id: string;
+  case_number: string;
+  status: string;
+  case_type: string;
+  customer_name: string;
+  customer_email: string;
+  merchant_order_ref: string;
+  provider_status: string;
+  order_status: string;
+  amount_minor: number;
+  currency: string;
+  severity: string;
+  priority_score: number;
+  age_minutes: number;
+  summary: string;
+  next_step: string;
+  created_at: string;
+}
+
+/** A grouped root cause affecting many customer cases. */
+export interface Incident {
+  id: string;
+  number: string;
+  merchant_id: string;
+  provider_account_id: string;
+  root_cause_code: string;
+  root_cause_summary: string;
+  ai_summary: string;
+  next_step: string;
+  status: string;
+  severity: string;
+  confidence: number;
+  priority_score: number;
+  case_count: number;
+  open_case_count: number;
+  affected_amount_minor: number;
+  currency: string;
+  first_seen_at: string;
+  last_seen_at: string;
+  resolved_at?: string | null;
+  created_at: string;
+  updated_at: string;
+  draft_type: string;
+  drafts_pending: number;
+  drafts_approved: number;
+  drafts_sent: number;
+  cases: IncidentCase[];
+}
+
+/** A customer reply the assistant drafted from verified case facts. */
+export interface MessageDraft {
+  id: string;
+  case_id: string;
+  incident_id: string;
+  draft_type: string;
+  body: string;
+  status: string;
+  evidence_refs: string[];
+  ai_generated: boolean;
+  guardrail_flag: string;
+  approved_by?: string | null;
+  approved_at?: string | null;
+  sent_at?: string | null;
+  created_at: string;
+  updated_at: string;
+  case_number?: string;
+  customer_name?: string;
+  customer_email?: string;
+}
+
+export interface TriageInbox {
+  incidents: Incident[];
+  cases: IncidentCase[];
+  generated_at: string;
+}
+
+export interface IncidentDetail {
+  incident: Incident;
+  drafts: MessageDraft[];
+}
+
+export interface DraftResponse {
+  drafts: MessageDraft[];
+}
+
+export interface SendResult {
+  draft_id: string;
+  message_id: string;
+  case_id: string;
+  case_number: string;
+  sent_at: string;
+  auto_sent: boolean;
+}
+
+export interface FanOutResult {
+  incident_id: string;
+  results: {
+    case_id: string;
+    case_number: string;
+    status: string;
+    outcome: string;
+    detail: string;
+  }[];
 }
 
 /** Response from POST /api/v1/cases. */
@@ -397,6 +526,79 @@ class ApiClient {
     return this.request<any>(`/api/v1/cases/${caseId}/messages`, {
       method: 'POST',
       body: JSON.stringify({ body, visibility }),
+    });
+  }
+
+  // AI Case Assistant
+  async getTriageInbox(): Promise<TriageInbox> {
+    return this.request<TriageInbox>('/api/v1/assistant/incidents');
+  }
+
+  async getIncident(id: string): Promise<IncidentDetail> {
+    return this.request<IncidentDetail>(`/api/v1/assistant/incidents/${id}`);
+  }
+
+  async regroupCases(): Promise<{ incidents: Incident[] }> {
+    return this.request<{ incidents: Incident[] }>('/api/v1/assistant/regroup', { method: 'POST' });
+  }
+
+  async groupCase(caseId: string): Promise<{ incident: Incident | null }> {
+    return this.request<{ incident: Incident | null }>(`/api/v1/cases/${caseId}/group`, {
+      method: 'POST',
+    });
+  }
+
+  async draftIncidentReplies(id: string): Promise<DraftResponse> {
+    return this.request<DraftResponse>(`/api/v1/assistant/incidents/${id}/drafts`, { method: 'POST' });
+  }
+
+  async draftCaseReply(caseId: string): Promise<DraftResponse> {
+    return this.request<DraftResponse>(`/api/v1/cases/${caseId}/drafts`, { method: 'POST' });
+  }
+
+  async approveIncidentDrafts(id: string): Promise<DraftResponse> {
+    return this.request<DraftResponse>(`/api/v1/assistant/incidents/${id}/drafts/approve`, {
+      method: 'POST',
+    });
+  }
+
+  async sendIncidentDrafts(id: string): Promise<{ sent: SendResult[] }> {
+    return this.request<{ sent: SendResult[] }>(`/api/v1/assistant/incidents/${id}/drafts/send`, {
+      method: 'POST',
+    });
+  }
+
+  async approveDraft(id: string): Promise<DraftResponse> {
+    return this.request<DraftResponse>(`/api/v1/assistant/drafts/${id}/approve`, { method: 'POST' });
+  }
+
+  async updateDraft(id: string, body: string): Promise<DraftResponse> {
+    return this.request<DraftResponse>(`/api/v1/assistant/drafts/${id}`, {
+      method: 'POST',
+      body: JSON.stringify({ body }),
+    });
+  }
+
+  async sendDraft(id: string): Promise<{ sent: SendResult }> {
+    return this.request<{ sent: SendResult }>(`/api/v1/assistant/drafts/${id}/send`, { method: 'POST' });
+  }
+
+  async discardDraft(id: string): Promise<{ status: string }> {
+    return this.request<{ status: string }>(`/api/v1/assistant/drafts/${id}/discard`, {
+      method: 'POST',
+    });
+  }
+
+  async removeIncidentCase(incidentId: string, caseId: string): Promise<{ incident: Incident }> {
+    return this.request<{ incident: Incident }>(
+      `/api/v1/assistant/incidents/${incidentId}/cases/${caseId}`,
+      { method: 'DELETE' },
+    );
+  }
+
+  async fanOutIncident(incidentId: string): Promise<FanOutResult> {
+    return this.request<FanOutResult>(`/api/v1/assistant/incidents/${incidentId}/fanout`, {
+      method: 'POST',
     });
   }
 
